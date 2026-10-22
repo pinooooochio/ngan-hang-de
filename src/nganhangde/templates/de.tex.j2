@@ -1,0 +1,40 @@
+\documentclass[12pt]{article}
+\usepackage{nhd}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\small Mã đề << v.code >> \quad Trang \thepage/\pageref{LastPage}}
+
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries << v.title | tex >>}\par\smallskip
+  << date_text >><% if v.duration %> \quad|\quad Thời gian làm bài: << v.duration >> phút<% endif %>\par\smallskip
+  \fbox{\bfseries Mã đề << v.code >>}<% if solutions %> \quad {\bfseries\color{nhddung}ĐÁP ÁN VÀ LỜI GIẢI}<% endif %>
+\end{center}
+\hrule\medskip
+
+<% for sec in v.sections %>
+\phan{<< sec.name | tex >><% if sec.points %> {\normalfont\itshape(mỗi câu << sec.points >> điểm)}<% endif %>}
+<% for q in sec.questions %>
+% @@CAU << q.code >>
+\cau << q.stem >>
+<% if q.type == "mcq" %>
+\luachon[<< q.correct_index if solutions else 0 >>]<% for c in q.choices %>{<< c.content >>}<% endfor %>
+<% elif q.type == "tf" %>
+<% for c in q.choices %>
+\menhde{<< "abcd"[loop.index0] >>}{<< c.content >>}{<% if solutions %><< "Đúng" if c.correct else "Sai" >><% endif %>}
+<% endfor %>
+<% endif %>
+<% if solutions %>
+<% if q.type == "short" %>\dapanngan{<< q.short_answer >>}<% endif %>
+<% if q.solution %>\begin{loigiai}
+<< q.solution >>
+\end{loigiai}<% endif %>
+<% endif %>
+<% endfor %>
+<% endfor %>
+
+\bigskip
+\begin{center}--- HẾT ---\end{center}
+\end{document}

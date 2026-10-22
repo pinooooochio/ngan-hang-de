@@ -1,0 +1,33 @@
+# Cấu hình đề mẫu theo cấu trúc đề THPT từ 2025 (rút gọn)
+title = "Kiểm tra Vectơ trong không gian"
+date = "2026-10-22"
+duration = 45
+variants = 4
+first_code = 101
+seed = 2026
+
+[[section]]
+name = "PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn"
+type = "mcq"
+points = 0.25
+pick = [
+  { tag = "lop-12", level = "NB", count = 3 },
+  { tag = "lop-12", level = "TH", count = 3 },
+  { tag = "lop-12", level = "VD", count = 2 },
+]
+
+[[section]]
+name = "PHẦN II. Câu trắc nghiệm đúng sai"
+type = "tf"
+pick = [{ tag = "lop-12/vecto-trong-khong-gian", count = 2 }]
+
+[[section]]
+name = "PHẦN III. Câu trắc nghiệm trả lời ngắn"
+type = "short"
+points = 0.5
+pick = [{ tag = "lop-12/vecto-trong-khong-gian", count = 2 }]
+
+[[section]]
+name = "PHẦN IV. Tự luận"
+type = "essay"
+ids = ["12V-015"]

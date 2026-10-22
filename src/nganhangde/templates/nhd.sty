@@ -1,0 +1,77 @@
+% nhd.sty: định dạng đề thi của ngân hàng đề (biên dịch bằng XeLaTeX)
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{nhd}[2026/10/22 Ngan hang de]
+
+\RequirePackage{fontspec}
+\RequirePackage{amsmath,amssymb}
+\RequirePackage{geometry}
+\RequirePackage{xcolor}
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+\RequirePackage{array}
+\RequirePackage{enumitem}
+\RequirePackage{fancyhdr}
+\RequirePackage{lastpage}
+
+\setmainfont{Latin Modern Roman}
+\geometry{a4paper, margin=1.8cm, top=1.5cm, bottom=2cm}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+
+\definecolor{nhddung}{RGB}{200,0,0}
+
+% Đánh dấu dùng trong định dạng soạn; khi in thì không hiện gì
+\newcommand{\True}{}
+\newcommand{\Pin}{}
+
+% Một số macro hay gặp trong đề soạn bằng ex_test
+\providecommand{\heva}[1]{\left\{\begin{aligned}#1\end{aligned}\right.}
+\providecommand{\hoac}[1]{\left[\begin{aligned}#1\end{aligned}\right.}
+\providecommand{\immini}[3][]{%
+  \par\noindent\begin{minipage}[t]{0.62\linewidth}#2\end{minipage}\hfill
+  \begin{minipage}[t]{0.35\linewidth}\centering #3\end{minipage}\par}
+
+% Câu hỏi
+\newcounter{cau}
+\newcommand{\phan}[1]{\par\medskip{\bfseries #1}\par\setcounter{cau}{0}}
+\newcommand{\cau}{\par\smallskip\stepcounter{cau}{\bfseries\color{blue!50!black}Câu \thecau.}\ }
+
+% Lựa chọn trắc nghiệm, tự xếp 4, 2 hoặc 1 lựa chọn trên một dòng.
+% \luachon[n]{A}{B}{C}{D}: n = 1..4 là đáp án đúng cần tô (0 = không tô)
+\newlength{\nhd@w}
+\newlength{\nhd@max}
+\newcommand{\nhd@label}[2]{%
+  \ifnum#1=\nhd@ok\relax
+    {\bfseries\color{nhddung}\underline{#2.}}%
+  \else
+    {\bfseries\color{blue!50!black}#2.}%
+  \fi\ }
+\newcommand{\nhd@measure}[1]{%
+  \settowidth{\nhd@w}{\bfseries A.\ #1}%
+  \ifdim\nhd@w>\nhd@max\setlength{\nhd@max}{\nhd@w}\fi}
+\newcommand{\nhd@opt}[4]{\parbox[t]{#1}{\nhd@label{#2}{#3}#4}}
+\newcommand{\luachon}[5][0]{%
+  \def\nhd@ok{#1}%
+  \setlength{\nhd@max}{0pt}%
+  \nhd@measure{#2}\nhd@measure{#3}\nhd@measure{#4}\nhd@measure{#5}%
+  \par\noindent
+  \ifdim\nhd@max<0.22\linewidth
+    \nhd@opt{0.25\linewidth}{1}{A}{#2}\nhd@opt{0.25\linewidth}{2}{B}{#3}%
+    \nhd@opt{0.25\linewidth}{3}{C}{#4}\nhd@opt{0.25\linewidth}{4}{D}{#5}%
+  \else\ifdim\nhd@max<0.47\linewidth
+    \nhd@opt{0.5\linewidth}{1}{A}{#2}\nhd@opt{0.5\linewidth}{2}{B}{#3}\par\noindent
+    \nhd@opt{0.5\linewidth}{3}{C}{#4}\nhd@opt{0.5\linewidth}{4}{D}{#5}%
+  \else
+    \nhd@opt{\linewidth}{1}{A}{#2}\par\noindent
+    \nhd@opt{\linewidth}{2}{B}{#3}\par\noindent
+    \nhd@opt{\linewidth}{3}{C}{#4}\par\noindent
+    \nhd@opt{\linewidth}{4}{D}{#5}%
+  \fi\fi\par}
+
+% Mệnh đề đúng/sai: \menhde{a}{nội dung}{kết quả} (kết quả rỗng ở đề học sinh)
+\newcommand{\menhde}[3]{\par\noindent\hspace*{1em}{\bfseries #1)}\ #2\ifx\relax#3\relax\else\ {\bfseries\color{nhddung}(#3)}\fi}
+
+\newenvironment{loigiai}{\par\smallskip\noindent{\bfseries\itshape Lời giải.}\ }{\par}
+\newcommand{\dapanngan}[1]{\par\noindent{\bfseries\color{nhddung}Đáp án: #1}\par}
+
+\endinput

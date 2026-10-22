@@ -1,0 +1,34 @@
+\documentclass[12pt]{article}
+\usepackage{nhd}
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries BẢNG ĐÁP ÁN}\par\smallskip
+  {\bfseries << title | tex >>}\par
+  << date_text >>
+\end{center}
+\hrule\medskip
+
+<% for v in variants %>
+\subsection*{Mã đề << v.code >>}
+<% for sec in v.sections %>
+<% if sec.questions %>
+{\bfseries << sec.name | tex >>}\par\smallskip
+<% if sec.type == "essay" %>
+{\itshape Tự luận: xem file lời giải.}\par
+<% else %>
+<% for row in sec.questions | batch(10) %>
+\noindent\begin{tabular}{|>{\bfseries}l|<% for _ in row %>c|<% endfor %>}
+\hline
+Câu<% for q in row %> & << q.number >><% endfor %> \\ \hline
+Đáp án<% for q in row %> & << q.key >><% endfor %> \\ \hline
+\end{tabular}\par\smallskip
+<% endfor %>
+<% endif %>
+<% endif %>
+<% endfor %>
+<% endfor %>
+
+\end{document}
