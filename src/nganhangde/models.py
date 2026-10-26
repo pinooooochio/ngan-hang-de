@@ -1,4 +1,4 @@
-"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, đề và mã đề."""
+"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, đề, mã đề và lượt luyện đề."""
 
 from __future__ import annotations
 
@@ -195,3 +195,48 @@ class Build(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     exam: Mapped[Exam] = relationship(back_populates="builds")
+
+
+class Attempt(Base):
+    """Một lượt luyện đề: làm một mã đề trong kho đề, hoặc luyện nhanh câu lấy từ ngân hàng.
+    `data` là bản chụp đề (cùng dạng ExamVariant.data, có đáp án), nên xoá đề hay sửa câu
+    hỏi không làm đổi lượt đã làm."""
+
+    __tablename__ = "attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exam_id: Mapped[int | None] = mapped_column(ForeignKey("exams.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # exam | quick
+    title: Mapped[str] = mapped_column(String(300))
+    variant_code: Mapped[str | None] = mapped_column(String(20))
+    data: Mapped[dict] = mapped_column(JSON)
+    answers: Mapped[dict] = mapped_column(JSON, default=dict)  # "phần.câu" -> câu trả lời
+    duration: Mapped[int | None] = mapped_column(Integer)  # phút, None = không giới hạn
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    score: Mapped[float | None] = mapped_column(Float)
+    max_score: Mapped[float | None] = mapped_column(Float)
+
+    items: Mapped[list[AttemptItem]] = relationship(
+        back_populates="attempt", order_by="AttemptItem.id", cascade="all, delete-orphan"
+    )
+
+
+class AttemptItem(Base):
+    """Kết quả chấm một câu trong lượt luyện; dùng để thống kê theo chủ đề và mức độ."""
+
+    __tablename__ = "attempt_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempts.id"), index=True)
+    section: Mapped[int] = mapped_column(Integer)
+    position: Mapped[int] = mapped_column(Integer)
+    question_code: Mapped[str] = mapped_column(String(64), index=True)
+    type: Mapped[str] = mapped_column(String(10))
+    level: Mapped[str | None] = mapped_column(String(10))
+    tags: Mapped[list] = mapped_column(JSON, default=list)  # đường dẫn thẻ của câu lúc nộp
+    points: Mapped[float] = mapped_column(Float, default=0)
+    max_points: Mapped[float] = mapped_column(Float, default=0)
+    correct: Mapped[bool | None] = mapped_column(Boolean)  # None: tự luận, không chấm
+
+    attempt: Mapped[Attempt] = relationship(back_populates="items")

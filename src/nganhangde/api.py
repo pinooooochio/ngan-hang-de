@@ -10,7 +10,9 @@ import threading
 import zipfile
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
@@ -19,10 +21,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import bank, builds, generator, render
+from . import bank, builds, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url
-from .models import Base, BuildStatus, Exam, Level, Question, QuestionType, Status
+from .models import Attempt, Base, BuildStatus, Exam, Level, Question, QuestionType, Status
 from .parser import ParsedQuestion, parse_text
 from .serialize import NEW_TEMPLATE, question_to_ex
 
@@ -169,6 +171,59 @@ def exam_json(exam: Exam, full: bool = False) -> dict:
             variants=[{"code": v.code, "answer_key": v.answer_key, "data": v.data} for v in exam.variants],
             files=[build_json(exam.id, b) for b in exam.builds],
         )
+    return data
+
+
+class QuickIn(BaseModel):
+    title: str | None = None
+    tag: str | None = None
+    level: Level | None = None
+    mcq: int = Field(0, ge=0, le=100)
+    tf: int = Field(0, ge=0, le=50)
+    short: int = Field(0, ge=0, le=50)
+    essay: int = Field(0, ge=0, le=20)
+    duration: int | None = Field(None, ge=1, le=600)
+
+
+class AttemptIn(BaseModel):
+    exam_id: int | None = None
+    variant: str | None = None
+    timed: bool = True
+    quick: QuickIn | None = None
+    retry_of: int | None = None
+
+
+class AnswersIn(BaseModel):
+    answers: dict[str, Any] = {}
+
+
+def attempt_json(a: Attempt, full: bool = False) -> dict:
+    end = practice.deadline(a)
+    data = {
+        "id": a.id,
+        "kind": a.kind,
+        "title": a.title,
+        "exam_id": a.exam_id,
+        "variant_code": a.variant_code,
+        "duration": a.duration,
+        "started_at": a.started_at.isoformat(timespec="seconds"),
+        "deadline": end.isoformat(timespec="seconds") if end else None,
+        "submitted_at": a.submitted_at.isoformat(timespec="seconds") if a.submitted_at else None,
+        "late": practice.is_late(a),
+        "score": a.score,
+        "max_score": a.max_score,
+        "n_questions": sum(len(s["questions"]) for s in a.data["sections"]),
+    }
+    if full:
+        done = a.submitted_at is not None
+        data["data"] = a.data if done else practice.public_data(a.data)
+        data["answers"] = a.answers
+        data["results"] = (
+            {f"{it.section}.{it.position}": {"points": it.points, "max_points": it.max_points, "correct": it.correct} for it in a.items}
+            if done
+            else None
+        )
+        data["server_time"] = datetime.now().isoformat(timespec="seconds")
     return data
 
 
@@ -402,6 +457,9 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     @app.delete("/api/exams/{exam_id}", status_code=204)
     def delete_exam(exam_id: int, session: Session = S):
         exam = load_exam(session, exam_id)
+        # Lượt luyện giữ bản chụp đề riêng nên vẫn còn sau khi xoá đề
+        for a in session.scalars(select(Attempt).where(Attempt.exam_id == exam_id)):
+            a.exam_id = None
         session.delete(exam)
         session.commit()
         shutil.rmtree(builds.files_dir() / "exams" / str(exam_id), ignore_errors=True)
@@ -429,6 +487,70 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
                     z.write(b.pdf_path, f"{b.name}.pdf")
         headers = {"Content-Disposition": f'attachment; filename="{download_name(exam, "tat-ca", "zip")}"'}
         return Response(buf.getvalue(), media_type="application/zip", headers=headers)
+
+    # ---------- Luyện đề ----------
+
+    def load_attempt(session: Session, attempt_id: int) -> Attempt:
+        a = session.get(Attempt, attempt_id)
+        if a is None:
+            raise HTTPException(404, f"không có lượt luyện #{attempt_id}")
+        return a
+
+    @app.post("/api/attempts", status_code=201)
+    def start_attempt(body: AttemptIn, session: Session = S):
+        try:
+            if body.exam_id is not None:
+                a = practice.start_from_exam(session, load_exam(session, body.exam_id), body.variant, body.timed)
+            elif body.retry_of is not None:
+                spec = practice.retry_spec(load_attempt(session, body.retry_of))
+                a = practice.start_quick(session, spec)
+            elif body.quick is not None:
+                qk = body.quick
+                counts = {"mcq": qk.mcq, "tf": qk.tf, "short": qk.short, "essay": qk.essay}
+                spec = practice.quick_spec(qk.title, qk.tag, qk.level.value if qk.level else None, counts)
+                a = practice.start_quick(session, spec, qk.duration)
+            else:
+                raise HTTPException(422, "cần exam_id, quick hoặc retry_of")
+        except practice.PracticeError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        return attempt_json(a, full=True)
+
+    @app.get("/api/attempts")
+    def list_attempts(exam_id: int | None = None, session: Session = S):
+        q = select(Attempt).order_by(Attempt.started_at.desc(), Attempt.id.desc())
+        if exam_id is not None:
+            q = q.where(Attempt.exam_id == exam_id)
+        return [attempt_json(a) for a in session.scalars(q)]
+
+    @app.get("/api/attempts/stats")
+    def attempt_stats(session: Session = S):
+        return practice.stats(session)
+
+    @app.get("/api/attempts/{attempt_id}")
+    def get_attempt(attempt_id: int, session: Session = S):
+        return attempt_json(load_attempt(session, attempt_id), full=True)
+
+    @app.put("/api/attempts/{attempt_id}/answers", status_code=204)
+    def save_answers(attempt_id: int, body: AnswersIn, session: Session = S):
+        try:
+            practice.save_answers(session, load_attempt(session, attempt_id), body.answers)
+        except practice.PracticeError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/api/attempts/{attempt_id}/submit")
+    def submit_attempt(attempt_id: int, body: AnswersIn | None = None, session: Session = S):
+        a = load_attempt(session, attempt_id)
+        try:
+            practice.submit(session, a, body.answers if body else None)
+        except practice.PracticeError as e:
+            raise HTTPException(409, str(e))
+        return attempt_json(a, full=True)
+
+    @app.delete("/api/attempts/{attempt_id}", status_code=204)
+    def delete_attempt(attempt_id: int, session: Session = S):
+        session.delete(load_attempt(session, attempt_id))
+        session.commit()
 
     # Giao diện web đã build (src/nganhangde/web); mọi đường dẫn khác trả về index.html
     if (WEB_DIST / "index.html").exists():

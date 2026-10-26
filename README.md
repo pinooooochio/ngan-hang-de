@@ -5,7 +5,7 @@ Lớp > Chủ đề > Dạng bài và mức độ (NB, TH, VD, VDC), sinh nhiề
 xuất PDF đề, lời giải và bảng đáp án.
 
 Hiện có: lõi + dòng lệnh `nhd` (giai đoạn 1), giao diện web soạn, import, tìm câu hỏi (giai đoạn 2),
-ghép đề và tải PDF trên web (giai đoạn 3).
+ghép đề và tải PDF trên web (giai đoạn 3), luyện đề có chấm điểm (giai đoạn 4).
 Kiến trúc tổng thể và lộ trình nằm trong tài liệu "Kiến trúc ngân hàng đề LaTeX".
 
 ## Chạy bằng Docker (khuyên dùng)
@@ -40,6 +40,15 @@ Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người 
   và hiện rõ dòng nào thiếu.
 - **Kho đề**: danh sách đề đã tạo. Trang mỗi đề có file PDF từng mã đề (đề, đáp án + lời giải, bảng đáp án),
   tải tất cả dạng .zip, bảng đáp án, xem lại đề từng mã đề.
+
+- **Luyện đề**: làm một mã đề trong kho (có thể tính giờ theo thời gian của đề), hoặc luyện nhanh N câu
+  ngẫu nhiên theo thẻ và mức độ. Khi làm bài có đồng hồ đếm ngược, bảng số câu, tự lưu câu trả lời (tải lại
+  trang vẫn còn) và tự nộp khi hết giờ. Nộp xong thấy điểm, câu nào đúng sai, đáp án và lời giải; có nút
+  luyện lại các câu chưa đúng. Trang luyện đề có lịch sử và tỉ lệ điểm theo mức độ, theo lớp và chủ đề.
+
+  Chấm theo thang đề THPT 2025: trắc nghiệm 0,25 điểm mỗi câu; đúng/sai 4 ý được 0,1 / 0,25 / 0,5 / 1 điểm
+  khi đúng 1 / 2 / 3 / 4 ý; trả lời ngắn 0,5 điểm (so theo giá trị số, chấp nhận dấu phẩy thập phân);
+  tự luận không chấm tự động. Phần nào đặt "điểm mỗi câu" khi ghép đề thì dùng điểm đó.
 
 PDF được biên dịch nền ngay trong máy chủ (`nhd serve`), trang đề tự cập nhật khi xong. File nào nội dung không
 đổi thì dùng lại PDF đã có. Nếu LaTeX lỗi, trang đề chỉ ra câu gây lỗi và dẫn tới trang sửa câu đó.

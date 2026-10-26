@@ -71,6 +71,9 @@ export default function ExamDetailPage() {
         <h2>{exam.title}</h2>
         {buildSummary(exam.builds)}
         <span className="spacer" />
+        <button className="primary" onClick={() => api.startAttempt({ exam_id: exam.id, variant: v.code }).then((a) => navigate(`/luyen/${a.id}`))}>
+          Làm thử mã {v.code}
+        </button>
         <a className="button" href={`/api/exams/${exam.id}/files.zip`}>
           Tải tất cả (.zip)
         </a>
