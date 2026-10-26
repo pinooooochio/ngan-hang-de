@@ -6,7 +6,9 @@ import EditorPage from "./pages/EditorPage";
 import ExamDetailPage from "./pages/ExamDetailPage";
 import ExamListPage from "./pages/ExamListPage";
 import ExamNewPage from "./pages/ExamNewPage";
+import AttemptPage from "./pages/AttemptPage";
 import ImportPage from "./pages/ImportPage";
+import PracticeHomePage from "./pages/PracticeHomePage";
 import "./styles.css";
 
 function App() {
@@ -24,6 +26,7 @@ function App() {
             Kho đề
           </NavLink>
           <NavLink to="/de/moi">Ghép đề</NavLink>
+          <NavLink to="/luyen">Luyện đề</NavLink>
         </nav>
       </header>
       <main>
@@ -35,6 +38,8 @@ function App() {
           <Route path="/de" element={<ExamListPage />} />
           <Route path="/de/moi" element={<ExamNewPage />} />
           <Route path="/de/:id" element={<ExamDetailPage />} />
+          <Route path="/luyen" element={<PracticeHomePage />} />
+          <Route path="/luyen/:id" element={<AttemptPage />} />
         </Routes>
       </main>
     </BrowserRouter>
