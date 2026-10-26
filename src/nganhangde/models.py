@@ -130,6 +130,9 @@ class Exam(Base):
     variants: Mapped[list[ExamVariant]] = relationship(
         back_populates="exam", order_by="ExamVariant.code", cascade="all, delete-orphan"
     )
+    builds: Mapped[list[Build]] = relationship(
+        back_populates="exam", order_by="Build.id", cascade="all, delete-orphan"
+    )
 
 
 class ExamItem(Base):
@@ -161,3 +164,34 @@ class ExamVariant(Base):
     answer_key: Mapped[dict] = mapped_column(JSON)
 
     exam: Mapped[Exam] = relationship(back_populates="variants")
+
+
+class BuildStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class Build(Base):
+    """Một file PDF cần biên dịch của một đề (đề / lời giải của từng mã đề, bảng đáp án).
+    Bảng này cũng là hàng đợi cho worker biên dịch."""
+
+    __tablename__ = "builds"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exam_id: Mapped[int] = mapped_column(ForeignKey("exams.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))  # ví dụ "de-101"
+    kind: Mapped[str] = mapped_column(String(20))  # de | loigiai | dapan
+    variant_code: Mapped[str | None] = mapped_column(String(20))
+    status: Mapped[BuildStatus] = mapped_column(Enum(BuildStatus), default=BuildStatus.PENDING, index=True)
+    tex: Mapped[str] = mapped_column(Text)
+    tex_hash: Mapped[str] = mapped_column(String(64), index=True)
+    pdf_path: Mapped[str | None] = mapped_column(String(500))
+    cached: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text)
+    error_question: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    exam: Mapped[Exam] = relationship(back_populates="builds")

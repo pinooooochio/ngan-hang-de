@@ -8,7 +8,7 @@ from typing import Optional
 import typer
 from sqlalchemy import select
 
-from . import bank, compile as tex, generator, render
+from . import bank, builds, compile as tex, generator, render
 from .db import make_session
 from .models import LEVEL_NAMES, Level, Question, QuestionType, Status
 from .parser import parse_text, slugify
@@ -122,17 +122,10 @@ def build_cmd(
     folder.mkdir(parents=True, exist_ok=True)
     render.copy_style(folder)
     files: list[Path] = []
-    for v in exam.variants:
-        for prefix, sol in (("de", False), ("loigiai", True)):
-            p = folder / f"{prefix}-{v.code}.tex"
-            p.write_text(render.render_exam(v.data, solutions=sol), encoding="utf-8")
-            files.append(p)
-    key = folder / "dapan.tex"
-    key.write_text(
-        render.render_answer_key(exam.title, exam.exam_date, [(v.data, v.answer_key) for v in exam.variants]),
-        encoding="utf-8",
-    )
-    files.append(key)
+    for name, _kind, _code, content in builds.exam_documents(exam):
+        p = folder / f"{name}.tex"
+        p.write_text(content, encoding="utf-8")
+        files.append(p)
     typer.echo(f"Đề #{exam.id}: {len(exam.variants)} mã đề, {len(exam.items)} câu → {folder}")
 
     if no_pdf:
@@ -157,14 +150,15 @@ def build_cmd(
 def serve_cmd(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
+    no_worker: bool = typer.Option(False, "--khong-worker", help="Không chạy luồng biên dịch PDF nền"),
 ):
-    """Chạy giao diện web tại http://HOST:PORT."""
+    """Chạy giao diện web tại http://HOST:PORT (kèm worker biên dịch PDF)."""
     import uvicorn
 
     from .api import create_app
 
     typer.echo(f"Mở http://{host}:{port} trên trình duyệt")
-    uvicorn.run(create_app(), host=host, port=port)
+    uvicorn.run(create_app(worker=not no_worker), host=host, port=port)
 
 
 if __name__ == "__main__":
