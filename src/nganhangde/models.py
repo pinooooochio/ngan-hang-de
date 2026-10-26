@@ -240,3 +240,29 @@ class AttemptItem(Base):
     correct: Mapped[bool | None] = mapped_column(Boolean)  # None: tự luận, không chấm
 
     attempt: Mapped[Attempt] = relationship(back_populates="items")
+
+
+class GenerationBatch(Base):
+    """Một lần sinh câu hỏi bằng AI. `mode`: "api" (máy chủ gọi Claude) hoặc "manual"
+    (người dùng chép prompt sang Claude rồi dán kết quả lại). Câu sinh ra vào ngân hàng ở
+    trạng thái nháp, nguồn "AI #<id>". Bảng này cũng là hàng đợi cho worker sinh câu."""
+
+    __tablename__ = "generation_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mode: Mapped[str] = mapped_column(String(10))
+    status: Mapped[BuildStatus] = mapped_column(Enum(BuildStatus), default=BuildStatus.PENDING, index=True)
+    params: Mapped[dict] = mapped_column(JSON)  # lớp, chủ đề, dạng, mức độ, loại câu, số câu, ghi chú
+    system_prompt: Mapped[str] = mapped_column(Text)
+    user_prompt: Mapped[str] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(100))
+    output: Mapped[str | None] = mapped_column(Text)
+    items: Mapped[list] = mapped_column(JSON, default=list)  # kết quả kiểm tra từng câu
+    usage: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    @property
+    def source(self) -> str:
+        return f"AI #{self.id}"

@@ -18,7 +18,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY --from=web /src/nganhangde/web ./src/nganhangde/web
-RUN pip install --no-cache-dir '.[postgres]'
+RUN pip install --no-cache-dir '.[postgres,ai]'
 COPY examples ./examples
 EXPOSE 8000
 CMD ["nhd", "serve", "--host", "0.0.0.0", "--port", "8000"]
