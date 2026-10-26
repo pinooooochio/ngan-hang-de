@@ -4,3 +4,4 @@ __pycache__/
 *.db
 out/
 .pytest_cache/
+src/nganhangde/web/

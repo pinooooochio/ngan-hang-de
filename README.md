@@ -4,12 +4,40 @@ Ngân hàng câu hỏi Toán soạn bằng LaTeX: import câu hỏi theo định
 Lớp > Chủ đề > Dạng bài và mức độ (NB, TH, VD, VDC), sinh nhiều mã đề có đảo câu và đảo đáp án,
 xuất PDF đề, lời giải và bảng đáp án.
 
-Đây là giai đoạn 1 (lõi + dòng lệnh). Kiến trúc tổng thể và lộ trình nằm trong tài liệu
-"Kiến trúc ngân hàng đề LaTeX".
+Hiện có: lõi + dòng lệnh `nhd` (giai đoạn 1) và giao diện web soạn, import, tìm câu hỏi (giai đoạn 2).
+Kiến trúc tổng thể và lộ trình nằm trong tài liệu "Kiến trúc ngân hàng đề LaTeX".
+
+## Chạy bằng Docker (khuyên dùng)
+
+```bash
+docker compose up -d --build
+```
+
+Mở http://localhost:8000. Lệnh này chạy PostgreSQL và máy chủ web (có sẵn XeLaTeX để xem trước PDF).
+Dữ liệu nằm trong volume `pgdata`, không mất khi tắt máy chủ. Dùng dòng lệnh bên trong container:
+
+```bash
+docker compose exec app nhd import examples/vecto-khong-gian.tex
+docker compose exec app nhd build examples/de-vecto.toml    # PDF ra thư mục ./out
+```
+
+Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người dùng), nên cổng 8000 chỉ mở cho chính máy đó.
+
+## Giao diện web
+
+- **Ngân hàng câu hỏi**: cây thẻ bên trái kèm số câu mỗi nhánh; lọc theo mức độ, loại câu, trạng thái
+  (nháp / đã duyệt) và tìm theo nội dung hoặc mã câu. Chọn nhiều câu để gắn thêm thẻ, đặt mức độ hoặc duyệt.
+- **Soạn câu**: ô soạn LaTeX đúng định dạng bên dưới, bên phải xem trước công thức ngay khi gõ (MathJax)
+  cùng lỗi và cảnh báo; nút **Xem PDF** biên dịch câu bằng XeLaTeX để thấy đúng như khi in.
+  Câu mới lưu ở trạng thái nháp, bấm **Lưu và duyệt** để dùng được khi sinh đề.
+- **Import**: dán nội dung hoặc chọn file `.tex`, bấm **Kiểm tra** để xem từng câu là mới, trùng hay lỗi;
+  có thể gắn thêm một thẻ cho mọi câu, đặt mức độ cho câu chưa có, rồi chỉ lưu những câu đã chọn.
+
+Xem trước trên web là gần đúng (hình TikZ và ảnh chỉ hiện ở PDF).
 
 ## Cài đặt
 
-Cần Python 3.11+ và TeX Live có XeLaTeX, latexmk (Ubuntu/Debian:
+Phần này dành cho dùng dòng lệnh trực tiếp trên máy. Cần Python 3.11+ và TeX Live có XeLaTeX, latexmk (Ubuntu/Debian:
 `apt install texlive-xetex texlive-latex-extra latexmk`).
 
 ```bash
@@ -74,8 +102,18 @@ A/B/C/D trong mỗi mã đề chênh nhau tối đa 1 và không quá 3 câu li�
 được đảo thứ tự. Mỗi mã đề lưu seed và bản chụp nội dung, nên sửa câu trong ngân hàng không làm
 đổi đề đã sinh.
 
+## Chạy không dùng Docker
+
+```bash
+cd web && npm install && npm run build && cd ..   # build giao diện vào src/nganhangde/web
+nhd serve                                         # http://127.0.0.1:8000
+```
+
+Khi sửa giao diện: chạy `nhd serve` và `cd web && npm run dev` (Vite tự chuyển `/api` sang cổng 8000).
+
 ## Kiểm thử
 
 ```bash
 python -m pytest
+NHD_TEST_DB=postgresql+psycopg://user:pass@localhost/testdb python -m pytest   # chạy trên PostgreSQL
 ```

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ngân hàng đề</title>
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [["$", "$"], ["\\(", "\\)"]],
+          displayMath: [["$$", "$$"], ["\\[", "\\]"]],
+          macros: {
+            heva: ["\\left\\{\\begin{aligned}#1\\end{aligned}\\right.", 1],
+            hoac: ["\\left[\\begin{aligned}#1\\end{aligned}\\right.", 1],
+            True: "",
+            Pin: "",
+          },
+        },
+        svg: { fontCache: "global" },
+        startup: { typeset: false },
+      };
+    </script>
+    <script defer src="/mathjax/tex-svg-full.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

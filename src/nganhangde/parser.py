@@ -83,6 +83,11 @@ def normalize(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def clean(s: str) -> str:
+    """Bỏ khoảng trắng đầu/cuối mỗi dòng (LaTeX không phân biệt), giữ dòng trống ngăn đoạn."""
+    return "\n".join(ln.strip() for ln in s.strip().splitlines())
+
+
 def slugify(name: str) -> str:
     s = name.replace("đ", "d").replace("Đ", "D")
     s = unicodedata.normalize("NFD", s)
@@ -177,7 +182,7 @@ def parse_block(raw: str, preamble: str, line: int) -> ParsedQuestion:
 
     macros = find_top_macros(body)
     stem_end = macros[0][1] if macros else len(body)
-    q = ParsedQuestion(line=line, type=QuestionType.ESSAY, stem=body[:stem_end].strip())
+    q = ParsedQuestion(line=line, type=QuestionType.ESSAY, stem=clean(body[:stem_end]))
 
     seen: set[str] = set()
     pos_after = stem_end
@@ -204,13 +209,13 @@ def parse_block(raw: str, preamble: str, line: int) -> ParsedQuestion:
             for g in groups:
                 correct = bool(TRUE_RE.search(g))
                 pinned = bool(PIN_RE.search(g))
-                content = PIN_RE.sub("", TRUE_RE.sub("", g)).strip()
+                content = clean(PIN_RE.sub("", TRUE_RE.sub("", g)))
                 q.choices.append(ParsedChoice(content, correct, pinned))
         elif name == "shortans":
             q.type = QuestionType.SHORT
             q.short_answer = groups[0].strip()
         elif name == "loigiai":
-            q.solution = groups[0].strip()
+            q.solution = clean(groups[0])
 
     if "choice" in seen and "choiceTF" in seen:
         q.errors.append("không thể vừa có \\choice vừa có \\choiceTF")
