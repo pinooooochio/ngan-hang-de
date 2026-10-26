@@ -13,12 +13,14 @@ EXAMPLES = Path(__file__).parent.parent / "examples"
 
 
 @pytest.fixture
-def session():
-    s = make_session("sqlite://")
+def session(db_url):
+    s = make_session(db_url)
     parsed = parse_text((EXAMPLES / "vecto-khong-gian.tex").read_text(encoding="utf-8"))
     report = bank.import_questions(s, parsed)
     assert not report.failed
-    return s
+    yield s
+    s.close()
+    s.get_bind().dispose()
 
 
 def test_import_and_duplicates(session):

@@ -153,5 +153,19 @@ def build_cmd(
         raise typer.Exit(1)
 
 
+@app.command("serve")
+def serve_cmd(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+):
+    """Chạy giao diện web tại http://HOST:PORT."""
+    import uvicorn
+
+    from .api import create_app
+
+    typer.echo(f"Mở http://{host}:{port} trên trình duyệt")
+    uvicorn.run(create_app(), host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
