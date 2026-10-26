@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import BankPage from "./pages/BankPage";
 import EditorPage from "./pages/EditorPage";
+import ExamDetailPage from "./pages/ExamDetailPage";
+import ExamListPage from "./pages/ExamListPage";
+import ExamNewPage from "./pages/ExamNewPage";
 import ImportPage from "./pages/ImportPage";
 import "./styles.css";
 
@@ -17,6 +20,10 @@ function App() {
           </NavLink>
           <NavLink to="/cau/moi">Soạn câu mới</NavLink>
           <NavLink to="/import">Import</NavLink>
+          <NavLink to="/de" end>
+            Kho đề
+          </NavLink>
+          <NavLink to="/de/moi">Ghép đề</NavLink>
         </nav>
       </header>
       <main>
@@ -25,6 +32,9 @@ function App() {
           <Route path="/cau/moi" element={<EditorPage />} />
           <Route path="/cau/:code" element={<EditorPage />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route path="/de" element={<ExamListPage />} />
+          <Route path="/de/moi" element={<ExamNewPage />} />
+          <Route path="/de/:id" element={<ExamDetailPage />} />
         </Routes>
       </main>
     </BrowserRouter>

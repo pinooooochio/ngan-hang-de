@@ -4,7 +4,8 @@ Ngân hàng câu hỏi Toán soạn bằng LaTeX: import câu hỏi theo định
 Lớp > Chủ đề > Dạng bài và mức độ (NB, TH, VD, VDC), sinh nhiều mã đề có đảo câu và đảo đáp án,
 xuất PDF đề, lời giải và bảng đáp án.
 
-Hiện có: lõi + dòng lệnh `nhd` (giai đoạn 1) và giao diện web soạn, import, tìm câu hỏi (giai đoạn 2).
+Hiện có: lõi + dòng lệnh `nhd` (giai đoạn 1), giao diện web soạn, import, tìm câu hỏi (giai đoạn 2),
+ghép đề và tải PDF trên web (giai đoạn 3).
 Kiến trúc tổng thể và lộ trình nằm trong tài liệu "Kiến trúc ngân hàng đề LaTeX".
 
 ## Chạy bằng Docker (khuyên dùng)
@@ -14,7 +15,7 @@ docker compose up -d --build
 ```
 
 Mở http://localhost:8000. Lệnh này chạy PostgreSQL và máy chủ web (có sẵn XeLaTeX để xem trước PDF).
-Dữ liệu nằm trong volume `pgdata`, không mất khi tắt máy chủ. Dùng dòng lệnh bên trong container:
+Dữ liệu nằm trong volume `pgdata`, PDF của các đề trong volume `files`; tắt máy chủ không mất. Dùng dòng lệnh bên trong container:
 
 ```bash
 docker compose exec app nhd import examples/vecto-khong-gian.tex
@@ -32,6 +33,17 @@ Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người 
   Câu mới lưu ở trạng thái nháp, bấm **Lưu và duyệt** để dùng được khi sinh đề.
 - **Import**: dán nội dung hoặc chọn file `.tex`, bấm **Kiểm tra** để xem từng câu là mới, trùng hay lỗi;
   có thể gắn thêm một thẻ cho mọi câu, đặt mức độ cho câu chưa có, rồi chỉ lưu những câu đã chọn.
+
+- **Ghép đề**: nhập tiêu đề, ngày, thời gian, số mã đề; nút **Điền cấu trúc THPT 2025** tạo sẵn 3 phần
+  (12 câu trắc nghiệm, 4 câu đúng/sai, 6 câu trả lời ngắn). Mỗi phần chọn câu theo ma trận (thẻ × mức độ × số câu,
+  bên cạnh hiện số câu đã duyệt ngân hàng đang có) và/hoặc chọn tay từng câu. Thiếu câu thì nút **Tạo đề** bị khoá
+  và hiện rõ dòng nào thiếu.
+- **Kho đề**: danh sách đề đã tạo. Trang mỗi đề có file PDF từng mã đề (đề, đáp án + lời giải, bảng đáp án),
+  tải tất cả dạng .zip, bảng đáp án, xem lại đề từng mã đề.
+
+PDF được biên dịch nền ngay trong máy chủ (`nhd serve`), trang đề tự cập nhật khi xong. File nào nội dung không
+đổi thì dùng lại PDF đã có. Nếu LaTeX lỗi, trang đề chỉ ra câu gây lỗi và dẫn tới trang sửa câu đó.
+PDF lưu trong thư mục `files/` (đổi bằng biến `NHD_FILES`).
 
 Xem trước trên web là gần đúng (hình TikZ và ảnh chỉ hiện ở PDF).
 

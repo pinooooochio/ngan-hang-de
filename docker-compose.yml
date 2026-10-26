@@ -16,14 +16,17 @@ services:
     build: .
     environment:
       NHD_DB: postgresql+psycopg://nhd:nhd@db/nhd
+      NHD_FILES: /app/files
     # Chưa có đăng nhập nên chỉ mở cho máy này
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./out:/app/out
+      - files:/app/files
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  files:

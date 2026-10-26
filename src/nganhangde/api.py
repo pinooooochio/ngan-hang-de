@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
+import io
+import random
+import shutil
 import tempfile
+import threading
+import zipfile
 from collections.abc import Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import bank, render
+from . import bank, builds, generator, render
 from .compile import compile_tex, latex_available
 from .db import get_url
-from .models import Base, Level, Question, QuestionType, Status
+from .models import Base, BuildStatus, Exam, Level, Question, QuestionType, Status
 from .parser import ParsedQuestion, parse_text
 from .serialize import NEW_TEMPLATE, question_to_ex
 
@@ -93,6 +99,79 @@ class ImportIn(BaseModel):
     status: Status = Status.APPROVED
 
 
+class PickIn(BaseModel):
+    tag: str | None = None
+    level: Level | None = None
+    count: int = Field(1, ge=1, le=200)
+
+
+class SectionIn(BaseModel):
+    name: str = ""
+    type: QuestionType
+    points: float | None = None
+    shuffle: bool = True
+    pick: list[PickIn] = []
+    ids: list[str] = []
+
+
+class ExamIn(BaseModel):
+    title: str = Field(min_length=1)
+    date: str | None = None
+    duration: int | None = None
+    variants: int = Field(1, ge=1, le=30)
+    first_code: int = 101
+    seed: int | None = None
+    sections: list[SectionIn] = Field(min_length=1)
+
+
+class AvailabilityIn(BaseModel):
+    sections: list[SectionIn]
+
+
+def exam_spec(body: ExamIn) -> dict:
+    """Chuyển dữ liệu gửi lên thành cấu hình đề giống file TOML của dòng lệnh."""
+    data = body.model_dump(mode="json", exclude_none=True)
+    data["seed"] = body.seed if body.seed is not None else random.randint(1, 10**6)
+    data["section"] = data.pop("sections")
+    return data
+
+
+def build_json(exam_id: int, b) -> dict:
+    return {
+        "name": b.name,
+        "kind": b.kind,
+        "variant_code": b.variant_code,
+        "status": b.status.value,
+        "cached": b.cached,
+        "error": b.error,
+        "error_question": b.error_question,
+        "url": f"/api/exams/{exam_id}/files/{b.name}.pdf" if b.status == BuildStatus.DONE else None,
+    }
+
+
+def exam_json(exam: Exam, full: bool = False) -> dict:
+    counts = {s.value: 0 for s in BuildStatus}
+    for b in exam.builds:
+        counts[b.status.value] += 1
+    data = {
+        "id": exam.id,
+        "title": exam.title,
+        "date": exam.exam_date,
+        "duration": exam.duration,
+        "created_at": exam.created_at.isoformat(timespec="seconds"),
+        "n_variants": len(exam.variants),
+        "n_questions": len(exam.items),
+        "builds": counts,
+    }
+    if full:
+        data.update(
+            config=exam.config,
+            variants=[{"code": v.code, "answer_key": v.answer_key, "data": v.data} for v in exam.variants],
+            files=[build_json(exam.id, b) for b in exam.builds],
+        )
+    return data
+
+
 def split_tag(text: str | None) -> list[str] | None:
     if not text:
         return None
@@ -110,7 +189,7 @@ def parse_one(source: str) -> ParsedQuestion:
 # ---------- Ứng dụng ----------
 
 
-def create_app(db_url: str | None = None) -> FastAPI:
+def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     url = db_url or get_url()
     engine = create_engine(url, connect_args={"check_same_thread": False} if url.startswith("sqlite") else {})
     Base.metadata.create_all(engine)
@@ -120,7 +199,16 @@ def create_app(db_url: str | None = None) -> FastAPI:
         with SessionLocal() as s:
             yield s
 
-    app = FastAPI(title="Ngân hàng đề")
+    stop = threading.Event()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        if worker:
+            builds.start_worker(SessionLocal, stop)
+        yield
+        stop.set()
+
+    app = FastAPI(title="Ngân hàng đề", lifespan=lifespan)
     app.state.engine = engine
     S = Depends(get_session)
 
@@ -258,6 +346,89 @@ def create_app(db_url: str | None = None) -> FastAPI:
             if not result.ok:
                 raise HTTPException(422, f"Lỗi LaTeX: {result.error}")
             return Response(result.pdf.read_bytes(), media_type="application/pdf")
+
+    # ---------- Đề thi ----------
+
+    @app.post("/api/exams/availability")
+    def availability(body: AvailabilityIn, session: Session = S):
+        """Số câu đã duyệt hiện có cho từng dòng ma trận, và các mã câu chọn tay không dùng được."""
+        out = []
+        for sec in body.sections:
+            rows = [
+                len(bank.find_questions(session, tag=p.tag, level=p.level, type=sec.type, approved_only=True))
+                for p in sec.pick
+            ]
+            problems = []
+            for code in sec.ids:
+                q = bank.get_question(session, code)
+                if q is None:
+                    problems.append(f"không có câu {code}")
+                elif q.type != sec.type:
+                    problems.append(f"câu {code} không đúng loại của phần này")
+            out.append({"rows": rows, "problems": problems})
+        return {"sections": out}
+
+    @app.get("/api/exams")
+    def list_exams(session: Session = S):
+        exams = session.scalars(select(Exam).order_by(Exam.created_at.desc(), Exam.id.desc()))
+        return [exam_json(e) for e in exams]
+
+    @app.post("/api/exams", status_code=201)
+    def create_exam(body: ExamIn, session: Session = S):
+        try:
+            exam = generator.build_exam(session, exam_spec(body))
+        except generator.SpecError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        builds.queue_builds(session, exam)
+        return exam_json(exam, full=True)
+
+    def load_exam(session: Session, exam_id: int) -> Exam:
+        exam = session.get(Exam, exam_id)
+        if exam is None:
+            raise HTTPException(404, f"không có đề #{exam_id}")
+        return exam
+
+    @app.get("/api/exams/{exam_id}")
+    def get_exam(exam_id: int, session: Session = S):
+        return exam_json(load_exam(session, exam_id), full=True)
+
+    @app.post("/api/exams/{exam_id}/rebuild")
+    def rebuild_exam(exam_id: int, session: Session = S):
+        exam = load_exam(session, exam_id)
+        builds.queue_builds(session, exam)
+        return exam_json(exam, full=True)
+
+    @app.delete("/api/exams/{exam_id}", status_code=204)
+    def delete_exam(exam_id: int, session: Session = S):
+        exam = load_exam(session, exam_id)
+        session.delete(exam)
+        session.commit()
+        shutil.rmtree(builds.files_dir() / "exams" / str(exam_id), ignore_errors=True)
+
+    def download_name(exam: Exam, name: str, ext: str) -> str:
+        from .parser import slugify
+
+        return f"{slugify(exam.title)}-{name}.{ext}"
+
+    @app.get("/api/exams/{exam_id}/files/{name}.pdf")
+    def download_pdf(exam_id: int, name: str, session: Session = S):
+        exam = load_exam(session, exam_id)
+        b = next((b for b in exam.builds if b.name == name and b.status == BuildStatus.DONE), None)
+        if b is None or not b.pdf_path or not Path(b.pdf_path).exists():
+            raise HTTPException(404, "file chưa có")
+        return FileResponse(b.pdf_path, media_type="application/pdf", filename=download_name(exam, name, "pdf"))
+
+    @app.get("/api/exams/{exam_id}/files.zip")
+    def download_zip(exam_id: int, session: Session = S):
+        exam = load_exam(session, exam_id)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for b in exam.builds:
+                if b.status == BuildStatus.DONE and b.pdf_path and Path(b.pdf_path).exists():
+                    z.write(b.pdf_path, f"{b.name}.pdf")
+        headers = {"Content-Disposition": f'attachment; filename="{download_name(exam, "tat-ca", "zip")}"'}
+        return Response(buf.getvalue(), media_type="application/zip", headers=headers)
 
     # Giao diện web đã build (src/nganhangde/web); mọi đường dẫn khác trả về index.html
     if (WEB_DIST / "index.html").exists():

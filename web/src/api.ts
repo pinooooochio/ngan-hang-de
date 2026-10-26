@@ -62,6 +62,74 @@ export interface TagNode {
   names: string[];
 }
 
+export interface PickRow {
+  tag?: string;
+  level?: Level;
+  count: number;
+}
+
+export interface SectionSpec {
+  name: string;
+  type: QType;
+  points?: number;
+  pick: PickRow[];
+  ids: string[];
+}
+
+export interface ExamSpec {
+  title: string;
+  date?: string;
+  duration?: number;
+  variants: number;
+  first_code: number;
+  seed?: number;
+  sections: SectionSpec[];
+}
+
+export type BuildState = "pending" | "running" | "done" | "failed";
+
+export interface ExamFile {
+  name: string;
+  kind: "de" | "loigiai" | "dapan";
+  variant_code: string | null;
+  status: BuildState;
+  cached: boolean;
+  error: string | null;
+  error_question: string | null;
+  url: string | null;
+}
+
+export interface VariantQuestion {
+  code: string;
+  type: QType;
+  level: Level | null;
+  stem: string;
+  choices: { content: string; correct: boolean }[];
+  short_answer: string | null;
+  solution: string;
+}
+
+export interface ExamSummary {
+  id: number;
+  title: string;
+  date: string | null;
+  duration: number | null;
+  created_at: string;
+  n_variants: number;
+  n_questions: number;
+  builds: Record<BuildState, number>;
+}
+
+export interface ExamDetail extends ExamSummary {
+  config: Record<string, unknown>;
+  variants: {
+    code: string;
+    answer_key: { sections: string[][] };
+    data: { sections: { name: string; type: QType; points: number | null; questions: VariantQuestion[] }[] };
+  }[];
+  files: ExamFile[];
+}
+
 export const LEVELS: { value: Level; label: string }[] = [
   { value: "NB", label: "Nhận biết" },
   { value: "TH", label: "Thông hiểu" },
@@ -127,4 +195,11 @@ export const api = {
     status?: Status;
   }) => request<{ added: string[]; duplicates: number; failed: number }>("POST", "/api/import/commit", body),
   previewPdf: (source: string) => request<Blob>("POST", "/api/preview/pdf", { source }),
+  availability: (sections: SectionSpec[]) =>
+    request<{ sections: { rows: number[]; problems: string[] }[] }>("POST", "/api/exams/availability", { sections }),
+  listExams: () => request<ExamSummary[]>("GET", "/api/exams"),
+  createExam: (spec: ExamSpec) => request<ExamDetail>("POST", "/api/exams", spec),
+  getExam: (id: number) => request<ExamDetail>("GET", `/api/exams/${id}`),
+  rebuildExam: (id: number) => request<ExamDetail>("POST", `/api/exams/${id}/rebuild`),
+  deleteExam: (id: number) => request<void>("DELETE", `/api/exams/${id}`),
 };
