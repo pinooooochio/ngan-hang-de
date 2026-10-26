@@ -5,7 +5,7 @@ Lớp > Chủ đề > Dạng bài và mức độ (NB, TH, VD, VDC), sinh nhiề
 xuất PDF đề, lời giải và bảng đáp án.
 
 Hiện có: lõi + dòng lệnh `nhd` (giai đoạn 1), giao diện web soạn, import, tìm câu hỏi (giai đoạn 2),
-ghép đề và tải PDF trên web (giai đoạn 3), luyện đề có chấm điểm (giai đoạn 4).
+ghép đề và tải PDF trên web (giai đoạn 3), luyện đề có chấm điểm (giai đoạn 4), sinh câu hỏi bằng AI theo lớp / chủ đề / mức độ (giai đoạn 5).
 Kiến trúc tổng thể và lộ trình nằm trong tài liệu "Kiến trúc ngân hàng đề LaTeX".
 
 ## Chạy bằng Docker (khuyên dùng)
@@ -21,6 +21,9 @@ Dữ liệu nằm trong volume `pgdata`, PDF của các đề trong volume `file
 docker compose exec app nhd import examples/vecto-khong-gian.tex
 docker compose exec app nhd build examples/de-vecto.toml    # PDF ra thư mục ./out
 ```
+
+Để sinh câu hỏi trực tiếp bằng Claude, tạo file `.env` cạnh `docker-compose.yml` với dòng
+`ANTHROPIC_API_KEY=...` rồi chạy lại `docker compose up -d`.
 
 Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người dùng), nên cổng 8000 chỉ mở cho chính máy đó.
 
@@ -49,6 +52,22 @@ Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người 
   Chấm theo thang đề THPT 2025: trắc nghiệm 0,25 điểm mỗi câu; đúng/sai 4 ý được 0,1 / 0,25 / 0,5 / 1 điểm
   khi đúng 1 / 2 / 3 / 4 ý; trả lời ngắn 0,5 điểm (so theo giá trị số, chấp nhận dấu phẩy thập phân);
   tự luận không chấm tự động. Phần nào đặt "điểm mỗi câu" khi ghép đề thì dùng điểm đó.
+
+- **Sinh câu AI**: bảng độ phủ chủ đề × mức độ của từng lớp (theo khung chương trình Toán GDPT 2018 trong
+  `src/nganhangde/templates/chuong-trinh.toml`, cộng các chủ đề đã có trong ngân hàng), tô màu theo mục tiêu số câu
+  mỗi ô. Bấm một ô để điền yêu cầu (dạng bài, loại câu, số câu, yêu cầu thêm), rồi:
+  - **Sinh bằng Claude**: máy chủ gọi Claude API chạy nền, cần biến `ANTHROPIC_API_KEY` (mô hình đổi bằng `NHD_MODEL`,
+    mặc định `claude-opus-5-5`). Prompt hệ thống cố định nên được cache giữa các lần gọi.
+  - **Lấy prompt**: chép prompt dán vào Claude, dán câu trả lời lại để kiểm tra rồi lưu. Không cần khoá API.
+
+  Prompt gồm định dạng ex_test, quy tắc từng loại câu theo đề THPT 2025 (trả lời ngắn tối đa 4 kí tự, đúng/sai 4 ý
+  có cả đúng lẫn sai...), định nghĩa mức độ, câu mẫu đã duyệt cùng chủ đề và danh sách câu đã có để tránh trùng.
+  Kết quả được kiểm tra tự động: đúng định dạng, đúng loại câu, đúng một đáp án, trùng với ngân hàng; thẻ và mức độ
+  được ép theo ô đã chọn. Câu hợp lệ vào ngân hàng ở trạng thái **nháp**, nguồn `AI #<số lần sinh>`; nút **Duyệt**
+  mở ngân hàng lọc đúng các câu đó để đọc lại, sửa và duyệt. AI có thể sai, nên luôn đọc lời giải trước khi duyệt.
+
+  Dòng lệnh: `nhd prompt --lop "Lớp 12" --chu-de "Nguyên hàm và tích phân" --muc TH --loai mcq --so 10` in prompt;
+  `nhd sinh ...` (cùng tham số) gọi Claude API và lưu câu nháp.
 
 PDF được biên dịch nền ngay trong máy chủ (`nhd serve`), trang đề tự cập nhật khi xong. File nào nội dung không
 đổi thì dùng lại PDF đã có. Nếu LaTeX lỗi, trang đề chỉ ra câu gây lỗi và dẫn tới trang sửa câu đó.

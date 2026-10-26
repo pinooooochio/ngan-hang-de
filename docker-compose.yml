@@ -17,6 +17,9 @@ services:
     environment:
       NHD_DB: postgresql+psycopg://nhd:nhd@db/nhd
       NHD_FILES: /app/files
+      # Khoá Claude API để sinh câu hỏi trực tiếp (đặt trong file .env cạnh file này); bỏ trống thì dùng cách chép prompt
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      NHD_MODEL: ${NHD_MODEL:-claude-opus-5-5}
     # Chưa có đăng nhập nên chỉ mở cho máy này
     ports:
       - "127.0.0.1:8000:8000"

@@ -14,6 +14,7 @@ export default function BankPage() {
     type: params.get("loai") ?? "",
     status: params.get("trangthai") ?? "",
     q: params.get("tim") ?? "",
+    source: params.get("nguon") ?? "",
     page: Number(params.get("trang") ?? "0"),
   };
   const [items, setItems] = useState<QuestionSummary[]>([]);
@@ -42,6 +43,7 @@ export default function BankPage() {
           type: filters.type,
           status: filters.status,
           q: filters.q,
+          source: filters.source,
           limit: PAGE,
           offset: filters.page * PAGE,
         }),
@@ -133,7 +135,23 @@ export default function BankPage() {
         {selected.size > 0 && <BulkBar count={selected.size} onApply={bulk} onClear={() => setSelected(new Set())} />}
 
         <div className="result-count">
+          {items.length > 0 && (
+            <input
+              type="checkbox"
+              title="Chọn tất cả câu trên trang này"
+              checked={items.every((q) => selected.has(q.code))}
+              onChange={(e) => setSelected(e.target.checked ? new Set(items.map((q) => q.code)) : new Set())}
+            />
+          )}{" "}
           {total} câu{filters.tag && <> trong thẻ <code>{filters.tag}</code></>}
+          {filters.source && (
+            <span className="tag">
+              Nguồn: {filters.source}{" "}
+              <button className="link" onClick={() => setFilter("nguon", "")}>
+                ✕
+              </button>
+            </span>
+          )}
         </div>
 
         {items.map((q) => (

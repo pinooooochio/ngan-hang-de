@@ -236,6 +236,7 @@ def question_query(
     type: QuestionType | None = None,
     status: Status | None = None,
     text: str | None = None,
+    source: str | None = None,
 ) -> Select:
     """Câu truy vấn lọc câu hỏi. `tag` là đường dẫn slug hoặc tên; khớp cả các nút con."""
     stmt = select(Question)
@@ -247,6 +248,8 @@ def question_query(
         stmt = stmt.where(Question.type == type)
     if status:
         stmt = stmt.where(Question.status == status)
+    if source:
+        stmt = stmt.where(Question.source == source)
     if text:
         like = f"%{text}%"
         stmt = stmt.where(

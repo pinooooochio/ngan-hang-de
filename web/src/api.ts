@@ -196,6 +196,75 @@ export interface PracticeStats {
   by_tag: (StatBucket & { path: string; names: string[]; depth: number })[];
 }
 
+export interface CurriculumTopic {
+  ten: string;
+  slug: string;
+  path: string;
+  dang: string[];
+  ghi_chu: string;
+}
+
+export interface Curriculum {
+  grades: { ten: string; slug: string; chu_de: CurriculumTopic[] }[];
+  api: boolean;
+  model: string;
+  max_count: number;
+}
+
+export interface CoverageTopic {
+  name: string;
+  path: string;
+  dang: string[];
+  in_curriculum: boolean;
+  counts: Record<string, { approved: number; draft: number }>;
+}
+
+export interface GenParams {
+  grade: string;
+  topic: string;
+  dang?: string;
+  level: Level;
+  type: QType;
+  count: number;
+  notes?: string;
+}
+
+export interface GenItem {
+  index: number;
+  state: "new" | "duplicate" | "error";
+  line: number;
+  type: QType;
+  stem: string;
+  tags: string[][];
+  errors: string[];
+  warnings: string[];
+  duplicate_of: string | null;
+  code: string | null;
+}
+
+export interface GenBatch {
+  id: number;
+  mode: "api" | "manual";
+  status: BuildState;
+  params: GenParams;
+  model: string | null;
+  source: string;
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number } | null;
+  n_added: number;
+  n_duplicate: number;
+  n_error: number;
+}
+
+export interface GenBatchDetail extends GenBatch {
+  system_prompt: string;
+  user_prompt: string;
+  output: string | null;
+  items: GenItem[];
+}
+
 export const LEVELS: { value: Level; label: string }[] = [
   { value: "NB", label: "Nhận biết" },
   { value: "TH", label: "Thông hiểu" },
@@ -276,5 +345,15 @@ export const api = {
   saveAnswers: (id: number, answers: Record<string, Answer>) => request<void>("PUT", `/api/attempts/${id}/answers`, { answers }),
   submitAttempt: (id: number, answers: Record<string, Answer>) =>
     request<AttemptDetail>("POST", `/api/attempts/${id}/submit`, { answers }),
+  genCurriculum: () => request<Curriculum>("GET", "/api/gen/curriculum"),
+  genCoverage: (grade: string) =>
+    request<{ grade: string; slug: string; topics: CoverageTopic[] }>("GET", `/api/gen/coverage?grade=${encodeURIComponent(grade)}`),
+  genPrompt: (p: GenParams) => request<{ system: string; user: string; combined: string }>("POST", "/api/gen/prompt", p),
+  genCheck: (params: GenParams, output: string) => request<GenItem[]>("POST", "/api/gen/check", { params, output }),
+  genCreate: (params: GenParams, mode: "api" | "manual", output?: string) =>
+    request<GenBatchDetail>("POST", "/api/gen/batches", { params, mode, output }),
+  genBatches: () => request<GenBatch[]>("GET", "/api/gen/batches"),
+  genBatch: (id: number) => request<GenBatchDetail>("GET", `/api/gen/batches/${id}`),
+  genRetry: (id: number) => request<GenBatchDetail>("POST", `/api/gen/batches/${id}/retry`),
   deleteAttempt: (id: number) => request<void>("DELETE", `/api/attempts/${id}`),
 };

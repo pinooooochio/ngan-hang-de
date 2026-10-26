@@ -8,7 +8,7 @@ from typing import Optional
 import typer
 from sqlalchemy import select
 
-from . import bank, builds, compile as tex, generator, render
+from . import aigen, bank, builds, compile as tex, generator, render
 from .db import make_session
 from .models import LEVEL_NAMES, Level, Question, QuestionType, Status
 from .parser import parse_text, slugify
@@ -144,6 +144,64 @@ def build_cmd(
             typer.secho(f"  ✗ {p.name}: {r.error}{where}", fg="red")
     if failed:
         raise typer.Exit(1)
+
+
+def gen_params(grade: str, topic: str, level: str, qtype: str, count: int, dang: Optional[str], notes: Optional[str]) -> dict:
+    return {"grade": grade, "topic": topic, "level": level, "type": qtype, "count": count, "dang": dang, "notes": notes}
+
+
+@app.command("prompt")
+def prompt_cmd(
+    grade: str = typer.Option(..., "--lop", help='Ví dụ "Lớp 12"'),
+    topic: str = typer.Option(..., "--chu-de", help='Ví dụ "Nguyên hàm và tích phân"'),
+    level: str = typer.Option(..., "--muc", help="NB | TH | VD | VDC"),
+    qtype: str = typer.Option("mcq", "--loai", help="mcq | tf | short | essay"),
+    count: int = typer.Option(10, "--so", help="Số câu"),
+    dang: Optional[str] = typer.Option(None, "--dang", help="Dạng bài (tuỳ chọn)"),
+    notes: Optional[str] = typer.Option(None, "--ghi-chu", help="Yêu cầu thêm"),
+):
+    """In prompt sinh câu hỏi để dán vào Claude. Kết quả dán lại bằng `nhd import --nhap`."""
+    session = make_session()
+    try:
+        system, user = aigen.build_prompt(session, gen_params(grade, topic, level, qtype, count, dang, notes))
+    except aigen.GenError as e:
+        typer.echo(f"Lỗi: {e}")
+        raise typer.Exit(1)
+    typer.echo(aigen.combined_prompt(system, user))
+
+
+@app.command("sinh")
+def generate_cmd(
+    grade: str = typer.Option(..., "--lop"),
+    topic: str = typer.Option(..., "--chu-de"),
+    level: str = typer.Option(..., "--muc"),
+    qtype: str = typer.Option("mcq", "--loai"),
+    count: int = typer.Option(10, "--so"),
+    dang: Optional[str] = typer.Option(None, "--dang"),
+    notes: Optional[str] = typer.Option(None, "--ghi-chu"),
+):
+    """Gọi Claude API sinh câu hỏi (cần ANTHROPIC_API_KEY), lưu vào ngân hàng ở trạng thái nháp."""
+    session = make_session()
+    try:
+        batch = aigen.create_batch(session, gen_params(grade, topic, level, qtype, count, dang, notes), "api")
+    except aigen.GenError as e:
+        typer.echo(f"Lỗi: {e}")
+        raise typer.Exit(1)
+    typer.echo(f"Đang sinh {count} câu bằng {batch.model}…")
+    aigen.run_batch(session, batch)
+    if batch.status.value == "failed":
+        typer.echo(f"Lỗi: {batch.error}")
+        raise typer.Exit(1)
+    for it in batch.items:
+        mark = {"new": "+", "duplicate": "=", "error": "!"}[it["state"]]
+        detail = it["code"] or it.get("duplicate_of") or "; ".join(it["errors"])
+        typer.echo(f" {mark} {detail}: {it['stem'][:70]}")
+        for w in it["warnings"]:
+            typer.echo(f"     cảnh báo: {w}")
+    added = sum(1 for it in batch.items if it["code"])
+    typer.echo(f"Đã thêm {added} câu nháp, nguồn \"{batch.source}\". Đọc lại và duyệt trên web trước khi ra đề.")
+    if batch.error:
+        typer.echo(batch.error)
 
 
 @app.command("serve")

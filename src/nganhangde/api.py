@@ -21,10 +21,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import bank, builds, generator, practice, render
+from . import aigen, bank, builds, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url
-from .models import Attempt, Base, BuildStatus, Exam, Level, Question, QuestionType, Status
+from .models import Attempt, Base, BuildStatus, Exam, GenerationBatch, Level, Question, QuestionType, Status
 from .parser import ParsedQuestion, parse_text
 from .serialize import NEW_TEMPLATE, question_to_ex
 
@@ -227,6 +227,49 @@ def attempt_json(a: Attempt, full: bool = False) -> dict:
     return data
 
 
+class GenParamsIn(BaseModel):
+    grade: str
+    topic: str
+    dang: str | None = None
+    level: Level
+    type: QuestionType = QuestionType.MCQ
+    count: int = Field(10, ge=1, le=aigen.MAX_COUNT)
+    notes: str | None = None
+
+
+class GenCheckIn(BaseModel):
+    params: GenParamsIn
+    output: str
+
+
+class GenBatchIn(BaseModel):
+    params: GenParamsIn
+    mode: str = Field("api", pattern="^(api|manual)$")
+    output: str | None = None
+
+
+def batch_json(b: GenerationBatch, full: bool = False) -> dict:
+    items = b.items or []
+    data = {
+        "id": b.id,
+        "mode": b.mode,
+        "status": b.status.value,
+        "params": b.params,
+        "model": b.model,
+        "source": b.source,
+        "created_at": b.created_at.isoformat(timespec="seconds"),
+        "finished_at": b.finished_at.isoformat(timespec="seconds") if b.finished_at else None,
+        "error": b.error,
+        "usage": b.usage,
+        "n_added": sum(1 for it in items if it.get("code")),
+        "n_duplicate": sum(1 for it in items if it["state"] == "duplicate"),
+        "n_error": sum(1 for it in items if it["state"] == "error"),
+    }
+    if full:
+        data.update(system_prompt=b.system_prompt, user_prompt=b.user_prompt, output=b.output, items=items)
+    return data
+
+
 def split_tag(text: str | None) -> list[str] | None:
     if not text:
         return None
@@ -260,6 +303,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     async def lifespan(_app: FastAPI):
         if worker:
             builds.start_worker(SessionLocal, stop)
+            aigen.start_worker(SessionLocal, stop)
         yield
         stop.set()
 
@@ -274,11 +318,12 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         type: QuestionType | None = None,
         status: Status | None = None,
         q: str | None = None,
+        source: str | None = None,
         limit: int = 50,
         offset: int = 0,
         session: Session = S,
     ):
-        stmt = bank.question_query(tag, level, type, status, q)
+        stmt = bank.question_query(tag, level, type, status, q, source)
         total = session.scalar(select(func.count()).select_from(stmt.subquery()))
         rows = session.scalars(stmt.order_by(Question.updated_at.desc(), Question.id.desc()).limit(limit).offset(offset))
         return {"total": total, "items": [question_json(r, full=False) for r in rows]}
@@ -551,6 +596,68 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     def delete_attempt(attempt_id: int, session: Session = S):
         session.delete(load_attempt(session, attempt_id))
         session.commit()
+
+    # ---------- Sinh câu hỏi bằng AI ----------
+
+    @app.get("/api/gen/curriculum")
+    def gen_curriculum():
+        return {"grades": aigen.load_curriculum(), "api": aigen.api_available(), "model": aigen.model_name(),
+                "max_count": aigen.MAX_COUNT}
+
+    @app.get("/api/gen/coverage")
+    def gen_coverage(grade: str, session: Session = S):
+        return aigen.coverage(session, grade)
+
+    @app.post("/api/gen/prompt")
+    def gen_prompt(body: GenParamsIn, session: Session = S):
+        try:
+            system, user = aigen.build_prompt(session, body.model_dump(mode="json"))
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+        return {"system": system, "user": user, "combined": aigen.combined_prompt(system, user)}
+
+    @app.post("/api/gen/check")
+    def gen_check(body: GenCheckIn, session: Session = S):
+        try:
+            items = aigen.check_output(session, body.params.model_dump(mode="json"), body.output)
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+        for it in items:
+            it.pop("parsed")
+        return items
+
+    @app.post("/api/gen/batches", status_code=201)
+    def gen_create(body: GenBatchIn, session: Session = S):
+        try:
+            batch = aigen.create_batch(session, body.params.model_dump(mode="json"), body.mode, body.output)
+        except aigen.GenError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        return batch_json(batch, full=True)
+
+    @app.get("/api/gen/batches")
+    def gen_list(session: Session = S):
+        rows = session.scalars(select(GenerationBatch).order_by(GenerationBatch.id.desc()).limit(100))
+        return [batch_json(b) for b in rows]
+
+    def load_batch(session: Session, batch_id: int) -> GenerationBatch:
+        b = session.get(GenerationBatch, batch_id)
+        if b is None:
+            raise HTTPException(404, f"không có lần sinh #{batch_id}")
+        return b
+
+    @app.get("/api/gen/batches/{batch_id}")
+    def gen_get(batch_id: int, session: Session = S):
+        return batch_json(load_batch(session, batch_id), full=True)
+
+    @app.post("/api/gen/batches/{batch_id}/retry")
+    def gen_retry(batch_id: int, session: Session = S):
+        b = load_batch(session, batch_id)
+        if b.mode != "api" or b.status != BuildStatus.FAILED:
+            raise HTTPException(409, "chỉ chạy lại được lần sinh qua API bị lỗi")
+        b.status, b.error, b.finished_at = BuildStatus.PENDING, None, None
+        session.commit()
+        return batch_json(b, full=True)
 
     # Giao diện web đã build (src/nganhangde/web); mọi đường dẫn khác trả về index.html
     if (WEB_DIST / "index.html").exists():

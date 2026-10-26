@@ -1,0 +1,125 @@
+# Khung chương trình môn Toán dùng cho bảng độ phủ và prompt sinh câu hỏi.
+# THPT theo Chương trình giáo dục phổ thông 2018 (các bộ sách chung nội dung, thứ tự chương có thể khác).
+# Tên lớp và chủ đề nên trùng với thẻ trong ngân hàng ("Lớp 12 / Nguyên hàm và tích phân / Tích phân").
+# Sửa file này để thêm chủ đề, dạng bài hoặc đổi cách gọi tên.
+
+[[lop]]
+ten = "Lớp 10"
+
+  [[lop.chu_de]]
+  ten = "Mệnh đề và tập hợp"
+  dang = ["Mệnh đề", "Tập hợp và các phép toán trên tập hợp"]
+
+  [[lop.chu_de]]
+  ten = "Bất phương trình và hệ bất phương trình bậc nhất hai ẩn"
+  dang = ["Bất phương trình bậc nhất hai ẩn", "Hệ bất phương trình bậc nhất hai ẩn và ứng dụng"]
+
+  [[lop.chu_de]]
+  ten = "Hệ thức lượng trong tam giác"
+  dang = ["Giá trị lượng giác của góc từ 0 đến 180 độ", "Định lí côsin và định lí sin", "Giải tam giác và diện tích tam giác"]
+
+  [[lop.chu_de]]
+  ten = "Vectơ"
+  dang = ["Các khái niệm mở đầu", "Tổng và hiệu của hai vectơ", "Tích của một vectơ với một số", "Vectơ trong mặt phẳng tọa độ", "Tích vô hướng của hai vectơ"]
+
+  [[lop.chu_de]]
+  ten = "Các số đặc trưng của mẫu số liệu không ghép nhóm"
+  dang = ["Số gần đúng và sai số", "Số đặc trưng đo xu thế trung tâm", "Số đặc trưng đo độ phân tán"]
+
+  [[lop.chu_de]]
+  ten = "Hàm số, đồ thị và ứng dụng"
+  dang = ["Hàm số", "Hàm số bậc hai", "Dấu của tam thức bậc hai", "Phương trình quy về phương trình bậc hai"]
+
+  [[lop.chu_de]]
+  ten = "Phương pháp tọa độ trong mặt phẳng"
+  dang = ["Phương trình đường thẳng", "Vị trí tương đối, góc và khoảng cách", "Đường tròn", "Ba đường conic"]
+
+  [[lop.chu_de]]
+  ten = "Đại số tổ hợp"
+  dang = ["Quy tắc đếm", "Hoán vị, chỉnh hợp và tổ hợp", "Nhị thức Newton"]
+
+  [[lop.chu_de]]
+  ten = "Tính xác suất theo định nghĩa cổ điển"
+  dang = ["Biến cố và định nghĩa cổ điển của xác suất", "Thực hành tính xác suất"]
+
+[[lop]]
+ten = "Lớp 11"
+
+  [[lop.chu_de]]
+  ten = "Hàm số lượng giác và phương trình lượng giác"
+  dang = ["Góc lượng giác", "Giá trị lượng giác của góc lượng giác", "Công thức lượng giác", "Hàm số lượng giác", "Phương trình lượng giác cơ bản"]
+
+  [[lop.chu_de]]
+  ten = "Dãy số, cấp số cộng và cấp số nhân"
+  dang = ["Dãy số", "Cấp số cộng", "Cấp số nhân"]
+
+  [[lop.chu_de]]
+  ten = "Các số đặc trưng đo xu thế trung tâm của mẫu số liệu ghép nhóm"
+  dang = ["Mẫu số liệu ghép nhóm", "Số trung bình, trung vị, tứ phân vị và mốt"]
+
+  [[lop.chu_de]]
+  ten = "Quan hệ song song trong không gian"
+  dang = ["Đường thẳng và mặt phẳng trong không gian", "Hai đường thẳng song song", "Đường thẳng và mặt phẳng song song", "Hai mặt phẳng song song", "Phép chiếu song song"]
+
+  [[lop.chu_de]]
+  ten = "Giới hạn và hàm số liên tục"
+  dang = ["Giới hạn của dãy số", "Giới hạn của hàm số", "Hàm số liên tục"]
+
+  [[lop.chu_de]]
+  ten = "Hàm số mũ và hàm số lôgarit"
+  dang = ["Lũy thừa với số mũ thực", "Lôgarit", "Hàm số mũ và hàm số lôgarit", "Phương trình và bất phương trình mũ, lôgarit"]
+
+  [[lop.chu_de]]
+  ten = "Quan hệ vuông góc trong không gian"
+  dang = ["Hai đường thẳng vuông góc", "Đường thẳng vuông góc với mặt phẳng", "Góc giữa đường thẳng và mặt phẳng", "Hai mặt phẳng vuông góc và góc nhị diện", "Khoảng cách", "Thể tích"]
+
+  [[lop.chu_de]]
+  ten = "Các quy tắc tính xác suất"
+  dang = ["Biến cố hợp, biến cố giao, biến cố độc lập", "Công thức cộng xác suất", "Công thức nhân xác suất cho hai biến cố độc lập"]
+
+  [[lop.chu_de]]
+  ten = "Đạo hàm"
+  dang = ["Định nghĩa và ý nghĩa của đạo hàm", "Các quy tắc tính đạo hàm", "Đạo hàm cấp hai"]
+
+[[lop]]
+ten = "Lớp 12"
+
+  [[lop.chu_de]]
+  ten = "Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số"
+  dang = ["Tính đơn điệu và cực trị", "Giá trị lớn nhất và giá trị nhỏ nhất", "Đường tiệm cận", "Khảo sát và vẽ đồ thị hàm số", "Bài toán thực tế"]
+
+  [[lop.chu_de]]
+  ten = "Vectơ trong không gian"
+  ghi_chu = "Sách gọi là Vectơ và hệ trục tọa độ trong không gian"
+  dang = ["Vectơ và các phép toán", "Tọa độ điểm", "Tích vô hướng", "Tích có hướng"]
+
+  [[lop.chu_de]]
+  ten = "Các số đặc trưng đo mức độ phân tán của mẫu số liệu ghép nhóm"
+  dang = ["Khoảng biến thiên và khoảng tứ phân vị", "Phương sai và độ lệch chuẩn"]
+
+  [[lop.chu_de]]
+  ten = "Nguyên hàm và tích phân"
+  dang = ["Nguyên hàm", "Tích phân", "Ứng dụng hình học của tích phân"]
+
+  [[lop.chu_de]]
+  ten = "Phương pháp tọa độ trong không gian"
+  dang = ["Phương trình mặt phẳng", "Phương trình đường thẳng", "Công thức tính góc", "Phương trình mặt cầu"]
+
+  [[lop.chu_de]]
+  ten = "Xác suất có điều kiện"
+  dang = ["Xác suất có điều kiện", "Công thức xác suất toàn phần và công thức Bayes"]
+
+[[lop]]
+ten = "Đại học"
+
+  [[lop.chu_de]]
+  ten = "Giải tích"
+  dang = ["Giới hạn và liên tục", "Đạo hàm và vi phân", "Tích phân", "Chuỗi số"]
+
+  [[lop.chu_de]]
+  ten = "Đại số tuyến tính"
+  dang = ["Ma trận và định thức", "Hệ phương trình tuyến tính", "Không gian vectơ", "Trị riêng và vectơ riêng"]
+
+  [[lop.chu_de]]
+  ten = "Xác suất thống kê"
+  dang = ["Biến cố và xác suất", "Biến ngẫu nhiên", "Ước lượng và kiểm định"]
