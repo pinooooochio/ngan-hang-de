@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import Nav from "./components/Nav";
 import BankPage from "./pages/BankPage";
 import EditorPage from "./pages/EditorPage";
 import ExamDetailPage from "./pages/ExamDetailPage";
@@ -11,30 +12,14 @@ import BackupPage from "./pages/BackupPage";
 import GenBatchPage from "./pages/GenBatchPage";
 import GeneratePage from "./pages/GeneratePage";
 import ImportPage from "./pages/ImportPage";
-import PracticeHomePage from "./pages/PracticeHomePage";
+import PracticeHomePage, { PracticeResultsPage } from "./pages/PracticeHomePage";
 import TagsPage from "./pages/TagsPage";
 import "./styles.css";
 
 function App() {
   return (
     <BrowserRouter>
-      <header className="topbar">
-        <span className="brand">Ngân hàng đề</span>
-        <nav>
-          <NavLink to="/" end>
-            Ngân hàng câu hỏi
-          </NavLink>
-          <NavLink to="/cau/moi">Soạn câu mới</NavLink>
-          <NavLink to="/import">Import</NavLink>
-          <NavLink to="/de" end>
-            Kho đề
-          </NavLink>
-          <NavLink to="/de/moi">Ghép đề</NavLink>
-          <NavLink to="/sinh">Sinh câu AI</NavLink>
-          <NavLink to="/luyen">Luyện đề</NavLink>
-          <NavLink to="/sao-luu">Sao lưu</NavLink>
-        </nav>
-      </header>
+      <Nav />
       <main>
         <Routes>
           <Route path="/" element={<BankPage />} />
@@ -48,6 +33,7 @@ function App() {
           <Route path="/sinh" element={<GeneratePage />} />
           <Route path="/sinh/:id" element={<GenBatchPage />} />
           <Route path="/luyen" element={<PracticeHomePage />} />
+          <Route path="/luyen/ket-qua" element={<PracticeResultsPage />} />
           <Route path="/luyen/:id" element={<AttemptPage />} />
           <Route path="/sao-luu" element={<BackupPage />} />
         </Routes>

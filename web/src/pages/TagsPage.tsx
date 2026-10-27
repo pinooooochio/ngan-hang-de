@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Curriculum, type TagMove, type TagNode } from "../api";
+import { TagSelect } from "../components/TagTree";
 
 /** Chuyển câu giữa các thẻ: theo quy tắc chuyển khung cũ trong khung chương trình, hoặc tự chọn. */
 export default function TagsPage() {
@@ -115,14 +116,7 @@ export default function TagsPage() {
         <div className="move-form">
           <label>
             Thẻ nguồn (cả các thẻ con)
-            <select value={source} onChange={(e) => setSource(e.target.value)}>
-              <option value="">Chọn thẻ…</option>
-              {tags.map((t) => (
-                <option key={t.path} value={t.path}>
-                  {"  ".repeat(t.depth) + t.name} ({t.count})
-                </option>
-              ))}
-            </select>
+            <TagSelect tags={tags} value={source} placeholder="Chọn thẻ…" allowEmpty={false} showCount onChange={setSource} />
           </label>
           <label>
             Thẻ đích

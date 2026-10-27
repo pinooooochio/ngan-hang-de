@@ -12,6 +12,7 @@ import {
   type StatBucket,
   type TagNode,
 } from "../api";
+import { TagSelect } from "../components/TagTree";
 
 const fmt = (x: number | null) => (x === null ? "" : String(Math.round(x * 100) / 100).replace(".", ","));
 
@@ -19,22 +20,16 @@ export default function PracticeHomePage() {
   const navigate = useNavigate();
   const [tags, setTags] = useState<TagNode[]>([]);
   const [exams, setExams] = useState<ExamSummary[]>([]);
-  const [attempts, setAttempts] = useState<AttemptSummary[] | null>(null);
-  const [stats, setStats] = useState<PracticeStats | null>(null);
+  const [doing, setDoing] = useState<AttemptSummary[]>([]);
   const [quick, setQuick] = useState<QuickSpec>({ mcq: 10, tf: 0, short: 0, essay: 0 });
   const [timed, setTimed] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const reload = () => {
-    api.listAttempts().then(setAttempts);
-    api.attemptStats().then(setStats);
-  };
-
   useEffect(() => {
     api.tags().then(setTags);
     api.listExams().then(setExams);
-    reload();
+    api.listAttempts().then((all) => setDoing(all.filter((a) => !a.submitted_at)));
   }, []);
 
   const start = async (body: Parameters<typeof api.startAttempt>[0]) => {
@@ -49,12 +44,6 @@ export default function PracticeHomePage() {
     }
   };
 
-  const remove = async (a: AttemptSummary) => {
-    if (!window.confirm(`Xoá lượt luyện "${a.title}"?`)) return;
-    await api.deleteAttempt(a.id);
-    reload();
-  };
-
   const nQuick = quick.mcq + quick.tf + quick.short + quick.essay;
   const count = (key: "mcq" | "tf" | "short" | "essay", label: string) => (
     <label>
@@ -65,8 +54,20 @@ export default function PracticeHomePage() {
 
   return (
     <div className="practice-home">
-      <h2>Luyện đề</h2>
+      <h2>Chọn đề làm</h2>
       {error && <div className="alert error">{error}</div>}
+      {doing.length > 0 && (
+        <div className="alert">
+          Đang làm dở:{" "}
+          {doing.map((a, i) => (
+            <span key={a.id}>
+              {i > 0 && ", "}
+              <Link to={`/luyen/${a.id}`}>{a.title}</Link>
+            </span>
+          ))}
+          . Xem tất cả ở <Link to="/luyen/ket-qua">Lịch sử và thống kê</Link>.
+        </div>
+      )}
 
       <div className="practice-cols">
         <section className="section-card">
@@ -74,14 +75,13 @@ export default function PracticeHomePage() {
           <div className="quick-grid">
             <label className="wide">
               Thẻ (lớp / chủ đề / dạng)
-              <select value={quick.tag ?? ""} onChange={(e) => setQuick({ ...quick, tag: e.target.value || undefined })}>
-                <option value="">Mọi thẻ</option>
-                {tags.map((t) => (
-                  <option key={t.path} value={t.path}>
-                    {"  ".repeat(t.depth) + t.name} ({t.count})
-                  </option>
-                ))}
-              </select>
+              <TagSelect
+                tags={tags}
+                value={quick.tag ?? ""}
+                placeholder="Mọi thẻ"
+                showCount
+                onChange={(p) => setQuick({ ...quick, tag: p || undefined })}
+              />
             </label>
             <label>
               Mức độ
@@ -149,6 +149,31 @@ export default function PracticeHomePage() {
         </section>
       </div>
 
+    </div>
+  );
+}
+
+/** Lịch sử các lượt luyện và thống kê theo chủ đề, mức độ. */
+export function PracticeResultsPage() {
+  const [attempts, setAttempts] = useState<AttemptSummary[] | null>(null);
+  const [stats, setStats] = useState<PracticeStats | null>(null);
+
+  const reload = () => {
+    api.listAttempts().then(setAttempts);
+    api.attemptStats().then(setStats);
+  };
+
+  useEffect(reload, []);
+
+  const remove = async (a: AttemptSummary) => {
+    if (!window.confirm(`Xoá lượt luyện "${a.title}"?`)) return;
+    await api.deleteAttempt(a.id);
+    reload();
+  };
+
+  return (
+    <div className="practice-home">
+      <h2>Lịch sử và thống kê</h2>
       <h3>Kết quả theo chủ đề và mức độ</h3>
       {stats && stats.attempts === 0 ? (
         <div className="muted">Chưa có lượt nào đã nộp.</div>
