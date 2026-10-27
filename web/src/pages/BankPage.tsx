@@ -73,7 +73,19 @@ export default function BankPage() {
     setSelected(next);
   };
 
-  const bulk = async (body: { add_tag?: string; level?: Level; status?: Status }) => {
+  const remove = async () => {
+    if (!window.confirm(`Xoá ${selected.size} câu đã chọn? Không hoàn tác được. Câu đã nằm trong đề sẽ được giữ lại.`)) return;
+    try {
+      const r = await api.bulkDelete([...selected]);
+      setMessage(`Đã xoá ${r.deleted} câu.` + (r.kept.length ? ` Giữ lại ${r.kept.join(", ")} vì đã nằm trong đề.` : ""));
+      await load();
+      setSelected(new Set());
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
+  const bulk = async (body: { add_tag?: string; set_tag?: string; level?: Level; status?: Status }) => {
     try {
       const r = await api.bulk({ codes: [...selected], ...body });
       setMessage(`Đã cập nhật ${r.updated} câu.`);
@@ -91,6 +103,9 @@ export default function BankPage() {
       <aside className="sidebar">
         <h3>Cây thẻ</h3>
         <TagTree tags={tags} selected={filters.tag} total={bankTotal} onSelect={(p) => setFilter("the", p)} />
+        <Link to="/the" className="small">
+          Quản lý thẻ, chuyển khung cũ
+        </Link>
       </aside>
       <section className="content">
         <div className="filters">
@@ -132,7 +147,9 @@ export default function BankPage() {
           </div>
         )}
 
-        {selected.size > 0 && <BulkBar count={selected.size} onApply={bulk} onClear={() => setSelected(new Set())} />}
+        {selected.size > 0 && (
+          <BulkBar count={selected.size} tags={tags} onApply={bulk} onDelete={remove} onClear={() => setSelected(new Set())} />
+        )}
 
         <div className="result-count">
           {items.length > 0 && (
@@ -203,20 +220,32 @@ export default function BankPage() {
 
 function BulkBar({
   count,
+  tags,
   onApply,
+  onDelete,
   onClear,
 }: {
   count: number;
-  onApply: (body: { add_tag?: string; level?: Level; status?: Status }) => void;
+  tags: TagNode[];
+  onApply: (body: { add_tag?: string; set_tag?: string; level?: Level; status?: Status }) => void;
+  onDelete: () => void;
   onClear: () => void;
 }) {
   const [tag, setTag] = useState("");
   return (
     <div className="bulkbar">
       <b>Đã chọn {count} câu</b>
-      <input placeholder="Gắn thêm thẻ, ví dụ: Lớp 12 / Vectơ" value={tag} onChange={(e) => setTag(e.target.value)} />
-      <button disabled={!tag.trim()} onClick={() => onApply({ add_tag: tag })}>
-        Gắn thẻ
+      <input list="bulk-tags" placeholder="Thẻ, ví dụ: Lớp 12 / Vectơ" value={tag} onChange={(e) => setTag(e.target.value)} />
+      <datalist id="bulk-tags">
+        {tags.map((t) => (
+          <option key={t.path} value={t.names.join(" / ")} />
+        ))}
+      </datalist>
+      <button disabled={!tag.trim()} onClick={() => onApply({ add_tag: tag })} title="Giữ các thẻ cũ, gắn thêm thẻ này">
+        Gắn thêm thẻ
+      </button>
+      <button disabled={!tag.trim()} onClick={() => onApply({ set_tag: tag })} title="Bỏ mọi thẻ cũ, chỉ để lại thẻ này">
+        Đổi thẻ
       </button>
       <select defaultValue="" onChange={(e) => e.target.value && onApply({ level: e.target.value as Level })}>
         <option value="">Đặt mức độ…</option>
@@ -228,6 +257,9 @@ function BulkBar({
       </select>
       <button onClick={() => onApply({ status: "approved" })}>Duyệt</button>
       <button onClick={() => onApply({ status: "draft" })}>Chuyển về nháp</button>
+      <button className="danger" onClick={onDelete}>
+        Xoá
+      </button>
       <button className="link" onClick={onClear}>
         Bỏ chọn
       </button>

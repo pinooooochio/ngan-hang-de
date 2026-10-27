@@ -24,7 +24,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from . import aigen, bank, builds, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url
-from .models import Attempt, Base, BuildStatus, Exam, GenerationBatch, Level, Question, QuestionType, Status
+from .models import (
+    Attempt,
+    Base,
+    BuildStatus,
+    Exam,
+    ExamTemplate,
+    GenerationBatch,
+    Level,
+    Question,
+    QuestionType,
+    Status,
+)
 from .parser import ParsedQuestion, parse_text
 from .serialize import NEW_TEMPLATE, question_to_ex
 
@@ -88,8 +99,18 @@ class SaveIn(BaseModel):
 class BulkIn(BaseModel):
     codes: list[str]
     add_tag: str | None = None  # "Lớp 12 / Vectơ"
+    set_tag: str | None = None  # thay mọi thẻ cũ bằng thẻ này
     level: Level | None = None
     status: Status | None = None
+
+
+class CodesIn(BaseModel):
+    codes: list[str]
+
+
+class MoveTagIn(BaseModel):
+    source: str = Field(min_length=1)  # tên hoặc slug, ví dụ "Đại học / Giải tích"
+    target: str = Field(min_length=1)  # tên, ví dụ "Giải tích 1 / Chương 1. Hàm số một biến số"
 
 
 class ImportIn(BaseModel):
@@ -126,6 +147,14 @@ class ExamIn(BaseModel):
     sections: list[SectionIn] = Field(min_length=1)
 
 
+class TemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    duration: int | None = None
+    variants: int | None = Field(None, ge=1, le=30)
+    sections: list[SectionIn] = Field(min_length=1)
+
+
 class AvailabilityIn(BaseModel):
     sections: list[SectionIn]
 
@@ -148,6 +177,27 @@ def build_json(exam_id: int, b) -> dict:
         "error": b.error,
         "error_question": b.error_question,
         "url": f"/api/exams/{exam_id}/files/{b.name}.pdf" if b.status == BuildStatus.DONE else None,
+    }
+
+
+def template_config(body: TemplateIn) -> dict:
+    """Cấu hình khung đề: bỏ câu chọn tay (thuộc về từng đề) và dòng ma trận trống."""
+    data = body.model_dump(mode="json", exclude_none=True, exclude={"name", "description"})
+    for sec in data["sections"]:
+        sec.pop("ids", None)
+        sec["pick"] = [p for p in sec["pick"] if p.get("count")]
+    return data
+
+
+def template_json(t: ExamTemplate) -> dict:
+    sections = t.config.get("sections", [])
+    return {
+        "id": t.id,
+        "name": t.name,
+        "description": t.description,
+        "updated_at": t.updated_at.isoformat(timespec="seconds"),
+        "n_questions": sum(p.get("count", 0) for sec in sections for p in sec.get("pick", [])),
+        **t.config,
     }
 
 
@@ -365,8 +415,14 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     @app.post("/api/questions/bulk")
     def bulk(body: BulkIn, session: Session = S):
-        n = bank.bulk_update(session, body.codes, split_tag(body.add_tag), body.level, body.status)
+        n = bank.bulk_update(session, body.codes, split_tag(body.add_tag), body.level, body.status,
+                             split_tag(body.set_tag))
         return {"updated": n}
+
+    @app.post("/api/questions/bulk-delete")
+    def bulk_delete(body: CodesIn, session: Session = S):
+        n, kept = bank.bulk_delete(session, body.codes)
+        return {"deleted": n, "kept": kept}
 
     @app.get("/api/template")
     def template():
@@ -380,8 +436,31 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     def tags(session: Session = S):
         return [
             {"path": n.path, "name": n.name, "depth": d, "count": c, "names": bank.tag_names(n)}
-            for n, d, c in bank.tag_tree(session)
+            for n, d, c in bank.tag_tree(session, aigen.curriculum_order())
         ]
+
+    @app.post("/api/tags/move")
+    def move_tag(body: MoveTagIn, session: Session = S):
+        target = split_tag(body.target)
+        if not target:
+            raise HTTPException(422, "chưa nhập thẻ đích")
+        try:
+            return {"moved": bank.move_tag(session, body.source, target)}
+        except bank.BankError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+
+    @app.get("/api/tags/moves")
+    def tag_moves(session: Session = S):
+        """Quy tắc chuyển thẻ từ khung cũ trong khung chương trình, kèm số câu còn ở thẻ nguồn."""
+        return [{**r, "count": bank.count_in_tag(session, r["from"])} for r in aigen.load_tag_moves()]
+
+    @app.post("/api/tags/moves/apply")
+    def apply_tag_moves(session: Session = S):
+        moved = 0
+        for r in aigen.load_tag_moves():
+            moved += bank.move_tag(session, r["from"], split_tag(r["to"]) or [])
+        return {"moved": moved}
 
     @app.get("/api/stats")
     def stats(session: Session = S):
@@ -467,6 +546,41 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
                     problems.append(f"câu {code} không đúng loại của phần này")
             out.append({"rows": rows, "problems": problems})
         return {"sections": out}
+
+    # ---------- Khung đề ----------
+
+    @app.get("/api/exam-templates")
+    def list_templates(session: Session = S):
+        return [template_json(t) for t in session.scalars(select(ExamTemplate).order_by(ExamTemplate.name))]
+
+    def save_template(session: Session, t: ExamTemplate, body: TemplateIn) -> dict:
+        name = body.name.strip()
+        other = session.scalar(select(ExamTemplate).where(ExamTemplate.name == name))
+        if other is not None and other.id != t.id:
+            raise HTTPException(409, f"đã có khung đề tên \"{name}\"")
+        t.name, t.description, t.config = name, body.description.strip(), template_config(body)
+        session.add(t)
+        session.commit()
+        return template_json(t)
+
+    @app.post("/api/exam-templates", status_code=201)
+    def create_template(body: TemplateIn, session: Session = S):
+        return save_template(session, ExamTemplate(), body)
+
+    def load_template(session: Session, template_id: int) -> ExamTemplate:
+        t = session.get(ExamTemplate, template_id)
+        if t is None:
+            raise HTTPException(404, f"không có khung đề #{template_id}")
+        return t
+
+    @app.put("/api/exam-templates/{template_id}")
+    def update_template(template_id: int, body: TemplateIn, session: Session = S):
+        return save_template(session, load_template(session, template_id), body)
+
+    @app.delete("/api/exam-templates/{template_id}", status_code=204)
+    def delete_template(template_id: int, session: Session = S):
+        session.delete(load_template(session, template_id))
+        session.commit()
 
     @app.get("/api/exams")
     def list_exams(session: Session = S):

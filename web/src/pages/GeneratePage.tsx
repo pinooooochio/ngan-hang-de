@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   api,
@@ -144,12 +144,18 @@ export default function GeneratePage() {
 
       <div className="toolbar">
         <label className="inline">
-          Lớp
+          Lớp / học phần
           <select value={grade} onChange={(e) => setGrade(e.target.value)}>
-            {cur?.grades.map((g) => (
-              <option key={g.slug} value={g.ten}>
-                {g.ten}
-              </option>
+            {[...new Set(cur?.grades.map((g) => g.bac))].map((bac) => (
+              <optgroup key={bac} label={bac}>
+                {cur?.grades
+                  .filter((g) => g.bac === bac)
+                  .map((g) => (
+                    <option key={g.slug} value={g.ten}>
+                      {g.ten}
+                    </option>
+                  ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -170,11 +176,17 @@ export default function GeneratePage() {
           </tr>
         </thead>
         <tbody>
-          {topics.map((t) => (
-            <tr key={t.path}>
-              <td>
-                {t.name}
-                {!t.in_curriculum && <span className="muted small"> (ngoài khung chương trình)</span>}
+          {topics.map((t, i) => (
+            <Fragment key={t.path}>
+            {t.chuong && t.chuong !== topics[i - 1]?.chuong && (
+              <tr className="cov-chapter">
+                <td colSpan={LEVELS.length + 1}>{t.chuong}</td>
+              </tr>
+            )}
+            <tr>
+              <td className={t.chuong ? "cov-indent" : ""}>
+                {t.label ?? t.name}
+                {!t.in_curriculum && !t.label && <span className="muted small"> (ngoài khung chương trình)</span>}
               </td>
               {LEVELS.map((l) => {
                 const c = t.counts[l.value] ?? { approved: 0, draft: 0 };
@@ -195,6 +207,7 @@ export default function GeneratePage() {
                 );
               })}
             </tr>
+            </Fragment>
           ))}
         </tbody>
       </table>

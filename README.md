@@ -30,7 +30,12 @@ Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người 
 ## Giao diện web
 
 - **Ngân hàng câu hỏi**: cây thẻ bên trái kèm số câu mỗi nhánh; lọc theo mức độ, loại câu, trạng thái
-  (nháp / đã duyệt) và tìm theo nội dung hoặc mã câu. Chọn nhiều câu để gắn thêm thẻ, đặt mức độ hoặc duyệt.
+  (nháp / đã duyệt) và tìm theo nội dung hoặc mã câu. Chọn nhiều câu để gắn thêm thẻ, đổi thẻ (bỏ thẻ cũ),
+  đặt mức độ, duyệt hoặc xoá (câu đã nằm trong đề được giữ lại).
+- **Quản lý thẻ** (link dưới cây thẻ, `/the`): chuyển mọi câu của một nhánh thẻ sang thẻ khác, nhánh trống tự xoá.
+  Có sẵn bảng chuyển câu từ khung đại học cũ (`Đại học / Giải tích / ...`) sang khung mới theo các quy tắc
+  `[[doi_the]]` trong `chuong-trinh.toml`; câu cũ chỉ chuyển được tới tầng chương, sau đó lọc theo chương trong
+  ngân hàng và **Đổi thẻ** sang chủ đề chi tiết.
 - **Soạn câu**: ô soạn LaTeX đúng định dạng bên dưới, bên phải xem trước công thức ngay khi gõ (MathJax)
   cùng lỗi và cảnh báo; nút **Xem PDF** biên dịch câu bằng XeLaTeX để thấy đúng như khi in.
   Câu mới lưu ở trạng thái nháp, bấm **Lưu và duyệt** để dùng được khi sinh đề.
@@ -41,6 +46,10 @@ Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người 
   (12 câu trắc nghiệm, 4 câu đúng/sai, 6 câu trả lời ngắn). Mỗi phần chọn câu theo ma trận (thẻ × mức độ × số câu,
   bên cạnh hiện số câu đã duyệt ngân hàng đang có) và/hoặc chọn tay từng câu. Thiếu câu thì nút **Tạo đề** bị khoá
   và hiện rõ dòng nào thiếu.
+
+  **Khung đề**: lưu các phần, loại câu, điểm, ma trận, thời gian và số mã đề thành khung có tên để lần sau chọn lại;
+  sửa rồi **Lưu đè khung** hoặc **Lưu thành khung mới**; **Xuất file** / **Nhập file** (.json) để chuyển khung giữa các
+  máy. Câu chọn tay không lưu vào khung. Trang một đề trong kho có nút **Ghép đề theo khung này**.
 - **Kho đề**: danh sách đề đã tạo. Trang mỗi đề có file PDF từng mã đề (đề, đáp án + lời giải, bảng đáp án),
   tải tất cả dạng .zip, bảng đáp án, xem lại đề từng mã đề.
 
@@ -53,9 +62,12 @@ Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người 
   khi đúng 1 / 2 / 3 / 4 ý; trả lời ngắn 0,5 điểm (so theo giá trị số, chấp nhận dấu phẩy thập phân);
   tự luận không chấm tự động. Phần nào đặt "điểm mỗi câu" khi ghép đề thì dùng điểm đó.
 
-- **Sinh câu AI**: bảng độ phủ chủ đề × mức độ của từng lớp (theo khung chương trình Toán GDPT 2018 trong
+- **Sinh câu AI**: bảng độ phủ chủ đề × mức độ của từng lớp hoặc học phần (theo khung chương trình trong
   `src/nganhangde/templates/chuong-trinh.toml`, cộng các chủ đề đã có trong ngân hàng), tô màu theo mục tiêu số câu
-  mỗi ô. Bấm một ô để điền yêu cầu (dạng bài, loại câu, số câu, yêu cầu thêm), rồi:
+  mỗi ô. Đại học theo khung Bách khoa, mỗi học phần một nhánh thẻ bốn tầng
+  `Giải tích 1 / Chương 1. Hàm số một biến số / <chủ đề> / <dạng>`; bảng độ phủ chia theo chương. Giải tích 1 lấy
+  theo đề cương (kiến thức trọng tâm và định hướng câu trắc nghiệm / tự luận được đưa vào prompt); Giải tích 2, 3,
+  Đại số, Xác suất thống kê là bản nháp, sửa trong file khung chương trình. Bấm một ô để điền yêu cầu (dạng bài, loại câu, số câu, yêu cầu thêm), rồi:
   - **Sinh bằng Claude**: máy chủ gọi Claude API chạy nền, cần biến `ANTHROPIC_API_KEY` (mô hình đổi bằng `NHD_MODEL`,
     mặc định `claude-opus-5-5`). Prompt hệ thống cố định nên được cache giữa các lần gọi.
   - **Lấy prompt**: chép prompt dán vào Claude, dán câu trả lời lại để kiểm tra rồi lưu. Không cần khoá API.

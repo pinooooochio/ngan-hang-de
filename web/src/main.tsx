@@ -11,6 +11,7 @@ import GenBatchPage from "./pages/GenBatchPage";
 import GeneratePage from "./pages/GeneratePage";
 import ImportPage from "./pages/ImportPage";
 import PracticeHomePage from "./pages/PracticeHomePage";
+import TagsPage from "./pages/TagsPage";
 import "./styles.css";
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
           <Route path="/cau/moi" element={<EditorPage />} />
           <Route path="/cau/:code" element={<EditorPage />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route path="/the" element={<TagsPage />} />
           <Route path="/de" element={<ExamListPage />} />
           <Route path="/de/moi" element={<ExamNewPage />} />
           <Route path="/de/:id" element={<ExamDetailPage />} />

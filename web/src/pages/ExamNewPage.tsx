@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   api,
+  type ExamTemplate,
+  type TemplateIn,
   LEVELS,
   TYPES,
   typeLabel,
@@ -32,6 +34,20 @@ const THPT_2025: SectionSpec[] = [
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** Phần của khung đề: bỏ câu chọn tay và dòng ma trận trống, để so sánh và lưu. */
+const frameOf = (sections: SectionSpec[]) =>
+  sections.map(({ name, type, points, pick }) => ({
+    name,
+    type,
+    ...(points !== undefined ? { points } : {}),
+    pick: pick.filter((r) => r.count > 0).map(({ tag, level, count }) => ({ ...(tag ? { tag } : {}), ...(level ? { level } : {}), count })),
+  }));
+
+const toSections = (sections: { name?: string; type: QType; points?: number; pick?: PickRow[] }[]): SectionSpec[] =>
+  sections.map((s) => ({ name: s.name ?? "", type: s.type, points: s.points ?? undefined, pick: s.pick ?? [], ids: [] }));
+
+const FILE_KIND = "nhd-khung-de";
+
 export default function ExamNewPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
@@ -45,10 +61,124 @@ export default function ExamNewPage() {
   const [picked, setPicked] = useState<Record<string, QuestionSummary>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [templates, setTemplates] = useState<ExamTemplate[]>([]);
+  const [tplId, setTplId] = useState<number | null>(null);
+  const [message, setMessage] = useState("");
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     api.tags().then(setTags);
+    api.listTemplates().then((list) => {
+      setTemplates(list);
+      const k = Number(searchParams.get("khung"));
+      const t = list.find((x) => x.id === k);
+      if (t) applyTemplate(t);
+    });
+    // Ghép đề mới theo khung của một đề trong kho
+    const fromExam = Number(searchParams.get("tu_de"));
+    if (fromExam)
+      api.getExam(fromExam).then((e) => {
+        const secs = (e.config.section ?? []) as Parameters<typeof toSections>[0];
+        if (secs.length) setSections(toSections(secs));
+        if (e.duration) setDuration(e.duration);
+        setVariants(e.n_variants || variants);
+        setMessage(`Đã lấy khung của đề "${e.title}" (bỏ các câu chọn tay). Có thể lưu thành khung để dùng lại.`);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const current = templates.find((t) => t.id === tplId) ?? null;
+  const dirty =
+    !!current &&
+    (JSON.stringify(frameOf(sections)) !== JSON.stringify(frameOf(toSections(current.sections))) ||
+      (current.duration ?? "") !== duration ||
+      (current.variants ?? variants) !== variants);
+
+  function applyTemplate(t: ExamTemplate) {
+    setTplId(t.id);
+    setSections(toSections(t.sections));
+    if (t.duration) setDuration(t.duration);
+    if (t.variants) setVariants(t.variants);
+    setMessage("");
+  }
+
+  const templateBody = (name: string, description: string): TemplateIn => ({
+    name,
+    description,
+    duration: duration === "" ? undefined : duration,
+    variants,
+    sections: frameOf(sections).map((s) => ({ ...s, ids: [] })),
+  });
+
+  const runTpl = async (fn: () => Promise<void>) => {
+    setError("");
+    setMessage("");
+    try {
+      await fn();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
+  const saveAsNew = () =>
+    runTpl(async () => {
+      const name = window.prompt("Tên khung đề mới", current ? `${current.name} (bản sửa)` : title.trim())?.trim();
+      if (!name) return;
+      const t = await api.createTemplate(templateBody(name, current?.description ?? ""));
+      setTemplates([...templates, t].sort((a, b) => a.name.localeCompare(b.name)));
+      setTplId(t.id);
+      setMessage(`Đã lưu khung "${t.name}".`);
+    });
+
+  const saveOver = () =>
+    runTpl(async () => {
+      if (!current) return;
+      const name = window.prompt("Lưu đè khung đề (có thể đổi tên)", current.name)?.trim();
+      if (!name) return;
+      const t = await api.updateTemplate(current.id, templateBody(name, current.description));
+      setTemplates(templates.map((x) => (x.id === t.id ? t : x)));
+      setMessage(`Đã cập nhật khung "${t.name}".`);
+    });
+
+  const removeTpl = () =>
+    runTpl(async () => {
+      if (!current || !window.confirm(`Xoá khung "${current.name}"? Các đề đã ghép không bị ảnh hưởng.`)) return;
+      await api.deleteTemplate(current.id);
+      setTemplates(templates.filter((x) => x.id !== current.id));
+      setTplId(null);
+    });
+
+  const exportTpl = () => {
+    const name = current?.name ?? (title.trim() || "khung-de");
+    const data = { kind: FILE_KIND, version: 1, ...templateBody(name, current?.description ?? "") };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importTpl = (file: File) =>
+    runTpl(async () => {
+      let data: TemplateIn & { kind?: string };
+      try {
+        data = JSON.parse(await file.text());
+      } catch {
+        throw new Error("File không phải JSON hợp lệ");
+      }
+      if (data.kind !== FILE_KIND || !Array.isArray(data.sections)) throw new Error("File không phải khung đề xuất từ trang này");
+      let name = data.name?.trim() || file.name.replace(/\.json$/i, "");
+      while (templates.some((t) => t.name === name)) {
+        const next = window.prompt(`Đã có khung tên "${name}". Đặt tên khác cho khung nhập vào:`, `${name} (2)`)?.trim();
+        if (!next) return;
+        name = next;
+      }
+      const t = await api.createTemplate({ ...data, name, sections: frameOf(toSections(data.sections)).map((s) => ({ ...s, ids: [] })) });
+      setTemplates([...templates, t].sort((a, b) => a.name.localeCompare(b.name)));
+      applyTemplate(t);
+      setMessage(`Đã nhập khung "${t.name}".`);
+    });
 
   // Kiểm tra số câu còn trong ngân hàng mỗi khi ma trận đổi
   useEffect(() => {
@@ -127,8 +257,62 @@ export default function ExamNewPage() {
         </label>
       </div>
 
+      <section className="section-card template-bar">
+        <div className="toolbar">
+          <b>Khung đề</b>
+          <select
+            value={tplId ?? ""}
+            onChange={(e) => {
+              const t = templates.find((x) => x.id === Number(e.target.value));
+              if (t) applyTemplate(t);
+              else setTplId(null);
+            }}
+          >
+            <option value="">{templates.length ? "Chọn khung đã lưu…" : "Chưa có khung nào"}</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.n_questions} câu)
+              </option>
+            ))}
+          </select>
+          {current && dirty && <span className="muted small">đã sửa so với khung</span>}
+          <span className="spacer" />
+          {current && (
+            <button disabled={!dirty} onClick={saveOver} title="Ghi phần đang sửa vào khung này">
+              Lưu đè khung
+            </button>
+          )}
+          <button onClick={saveAsNew}>Lưu thành khung mới</button>
+          <button onClick={exportTpl} title="Tải khung hiện tại về máy dưới dạng file .json">
+            Xuất file
+          </button>
+          <label className="button">
+            Nhập file
+            <input
+              type="file"
+              accept=".json,application/json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) importTpl(f);
+              }}
+            />
+          </label>
+          {current && (
+            <button className="link danger" onClick={removeTpl}>
+              Xoá khung
+            </button>
+          )}
+        </div>
+        <div className="hint">
+          Khung lưu các phần, loại câu, điểm, ma trận thẻ × mức độ × số câu, thời gian và số mã đề; không lưu câu chọn tay.
+        </div>
+        {message && <div className="alert ok">{message}</div>}
+      </section>
+
       <div className="toolbar">
-        <button onClick={() => setSections(THPT_2025)}>Điền cấu trúc THPT 2025</button>
+        <button onClick={() => { setSections(THPT_2025); setTplId(null); }}>Điền cấu trúc THPT 2025</button>
         <button onClick={addSection}>+ Thêm phần</button>
       </div>
 
