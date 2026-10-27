@@ -8,7 +8,7 @@ from typing import Optional
 import typer
 from sqlalchemy import select
 
-from . import aigen, bank, builds, compile as tex, generator, render
+from . import aigen, backup, bank, builds, compile as tex, generator, render
 from .db import make_session
 from .models import LEVEL_NAMES, Level, Question, QuestionType, Status
 from .parser import parse_text, slugify
@@ -202,6 +202,59 @@ def generate_cmd(
     typer.echo(f"Đã thêm {added} câu nháp, nguồn \"{batch.source}\". Đọc lại và duyệt trên web trước khi ra đề.")
     if batch.error:
         typer.echo(batch.error)
+
+
+def human_size(n: int) -> str:
+    return f"{n / 1e6:.1f} MB" if n >= 1e5 else f"{n / 1e3:.0f} KB"
+
+
+@app.command("backup")
+def backup_cmd(
+    out: Optional[Path] = typer.Option(None, "--ra", help="File .zip xuất ra (mặc định: thư mục sao lưu NHD_BACKUPS)"),
+    no_files: bool = typer.Option(False, "--khong-pdf", help="Không kèm PDF đã biên dịch (biên dịch lại được)"),
+    keep: Optional[int] = typer.Option(None, "--giu", help="Chỉ giữ lại N bản gần nhất trong thư mục sao lưu"),
+):
+    """Sao lưu toàn bộ dữ liệu (câu hỏi, thẻ, khung đề, kho đề, lượt luyện, PDF) ra một file .zip."""
+    engine = make_session().get_bind()
+    if out is not None:
+        with open(out, "wb") as f:
+            backup.write_backup(engine, f, include_files=not no_files)
+        target = out
+    else:
+        target = backup.save_backup(engine, include_files=not no_files, keep=keep)
+    counts = backup.table_counts(engine)
+    typer.echo(
+        f"Đã sao lưu {counts['questions']} câu hỏi, {counts['exams']} đề, {counts['attempts']} lượt luyện "
+        f"→ {target} ({human_size(target.stat().st_size)})"
+    )
+
+
+@app.command("restore")
+def restore_cmd(
+    file: Path = typer.Argument(..., exists=True, help="File .zip tạo bởi `nhd backup` hoặc nút tải trên web"),
+    yes: bool = typer.Option(False, "--dong-y", help="Không hỏi lại"),
+):
+    """Khôi phục từ file sao lưu: THAY TOÀN BỘ dữ liệu hiện có (có lưu một bản dữ liệu hiện tại trước)."""
+    engine = make_session().get_bind()
+    try:
+        z, archive = backup.open_archive(file)
+        z.close()
+        info = backup.summary(archive)
+        typer.echo(
+            f"File sao lưu lúc {info['created_at']}: {info['tables'].get('questions', 0)} câu hỏi, "
+            f"{info['tables'].get('exams', 0)} đề, {info['tables'].get('attempts', 0)} lượt luyện, {info['files']} file PDF."
+        )
+        for w in info["warnings"]:
+            typer.secho(f"  Cảnh báo: {w}", fg="yellow")
+        if not yes:
+            typer.confirm("Thay toàn bộ dữ liệu hiện có bằng bản này?", abort=True)
+        result = backup.restore(engine, file)
+    except backup.BackupError as e:
+        typer.secho(f"Lỗi: {e}", fg="red")
+        raise typer.Exit(1)
+    typer.echo("Đã khôi phục.")
+    if result["safety_backup"]:
+        typer.echo(f"Dữ liệu trước khi khôi phục được lưu ở {backup.backups_dir() / result['safety_backup']}")
 
 
 @app.command("serve")

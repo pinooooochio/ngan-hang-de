@@ -17,6 +17,8 @@ services:
     environment:
       NHD_DB: postgresql+psycopg://nhd:nhd@db/nhd
       NHD_FILES: /app/files
+      # Bản sao lưu lưu ra thư mục ./backups trên máy thật (ngoài Docker)
+      NHD_BACKUPS: /app/backups
       # Khoá Claude API để sinh câu hỏi trực tiếp (đặt trong file .env cạnh file này); bỏ trống thì dùng cách chép prompt
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       NHD_MODEL: ${NHD_MODEL:-claude-opus-5-5}
@@ -26,6 +28,7 @@ services:
     volumes:
       - ./out:/app/out
       - files:/app/files
+      - ./backups:/app/backups
     depends_on:
       db:
         condition: service_healthy

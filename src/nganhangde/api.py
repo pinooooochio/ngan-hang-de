@@ -14,14 +14,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
-from . import aigen, bank, builds, generator, practice, render
+from . import aigen, backup, bank, builds, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url
 from .models import (
@@ -772,6 +774,109 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         b.status, b.error, b.finished_at = BuildStatus.PENDING, None, None
         session.commit()
         return batch_json(b, full=True)
+
+    # ---------- Sao lưu và khôi phục ----------
+
+    def attachment(name: str) -> dict:
+        return {"Content-Disposition": f'attachment; filename="{name}"'}
+
+    @app.get("/api/backup/info")
+    def backup_info():
+        n_files, size = backup.files_size()
+        return {
+            "tables": [
+                {"name": t, "label": backup.TABLE_NAMES.get(t, t), "count": n}
+                for t, n in backup.table_counts(engine).items()
+            ],
+            "files": n_files,
+            "files_size": size,
+            "folder": str(backup.backups_dir()),
+            "backups": backup.list_backups(),
+        }
+
+    @app.get("/api/backup/download")
+    def backup_download(files: bool = True):
+        """Tạo bản sao lưu và tải về ngay (không giữ lại trên máy chủ)."""
+        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        try:
+            with tmp:
+                backup.write_backup(engine, tmp, include_files=files)
+        except Exception:
+            Path(tmp.name).unlink(missing_ok=True)
+            raise
+        return FileResponse(
+            tmp.name,
+            media_type="application/zip",
+            filename=backup.backup_name(),
+            background=BackgroundTask(Path(tmp.name).unlink, missing_ok=True),
+        )
+
+    @app.post("/api/backup/save", status_code=201)
+    def backup_save(files: bool = True):
+        """Lưu một bản sao lưu vào thư mục sao lưu trên máy chủ."""
+        return {"name": backup.save_backup(engine, include_files=files).name}
+
+    def stored(name: str) -> Path:
+        try:
+            return backup.stored_backup(name)
+        except backup.BackupError as e:
+            raise HTTPException(404, str(e))
+
+    @app.get("/api/backup/stored/{name}")
+    def backup_stored(name: str):
+        return FileResponse(stored(name), media_type="application/zip", filename=name)
+
+    @app.delete("/api/backup/stored/{name}", status_code=204)
+    def backup_delete(name: str):
+        stored(name).unlink()
+
+    async def upload_or_stored(request: Request, name: str | None) -> bytes | Path:
+        if name:
+            return stored(name)
+        body = await request.body()
+        if not body:
+            raise HTTPException(422, "chưa chọn file sao lưu")
+        return body
+
+    @app.post("/api/backup/inspect")
+    async def backup_inspect(request: Request, name: str | None = None):
+        """Đọc thử file sao lưu (gửi nội dung .zip làm thân yêu cầu, hoặc tên một bản trên máy chủ)."""
+        src = await upload_or_stored(request, name)
+
+        def inspect():
+            z, archive = backup.open_archive(src)
+            with z:
+                return backup.summary(archive)
+
+        try:
+            return await run_in_threadpool(inspect)
+        except backup.BackupError as e:
+            raise HTTPException(422, str(e))
+
+    @app.post("/api/backup/restore")
+    async def backup_restore(request: Request, name: str | None = None):
+        """Thay toàn bộ dữ liệu bằng file sao lưu; dữ liệu hiện tại được lưu một bản trước."""
+        src = await upload_or_stored(request, name)
+        try:
+            return await run_in_threadpool(backup.restore, engine, src)
+        except backup.BackupError as e:
+            raise HTTPException(422, str(e))
+
+    @app.get("/api/export/questions.tex")
+    def export_questions(session: Session = S):
+        """Toàn bộ câu hỏi theo định dạng soạn, import lại được ở trang Import."""
+        rows = session.scalars(select(Question).order_by(Question.code))
+        parts = [
+            f"% Ngân hàng đề: toàn bộ câu hỏi, xuất lúc {datetime.now():%d/%m/%Y %H:%M}",
+            "% Import lại ở trang Import hoặc bằng lệnh: nhd import <file>",
+            "",
+        ]
+        for q in rows:
+            if q.status == Status.DRAFT:
+                parts.append("% (nháp)")
+            parts += [question_to_ex(q), ""]
+        name = f"ngan-hang-cau-hoi-{datetime.now():%Y%m%d}.tex"
+        return Response("\n".join(parts), media_type="text/plain; charset=utf-8", headers=attachment(name))
 
     # Giao diện web đã build (src/nganhangde/web); mọi đường dẫn khác trả về index.html
     if (WEB_DIST / "index.html").exists():
