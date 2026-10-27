@@ -86,6 +86,26 @@ export interface ExamSpec {
   sections: SectionSpec[];
 }
 
+/** Khung đề: ma trận phân bổ dùng lại khi ghép đề (không gồm câu chọn tay). */
+export interface ExamTemplate {
+  id: number;
+  name: string;
+  description: string;
+  updated_at: string;
+  n_questions: number;
+  duration?: number;
+  variants?: number;
+  sections: SectionSpec[];
+}
+
+export type TemplateIn = Omit<ExamTemplate, "id" | "updated_at" | "n_questions">;
+
+export interface TagMove {
+  from: string;
+  to: string;
+  count: number;
+}
+
 export type BuildState = "pending" | "running" | "done" | "failed";
 
 export interface ExamFile {
@@ -199,13 +219,25 @@ export interface PracticeStats {
 export interface CurriculumTopic {
   ten: string;
   slug: string;
+  names: string[];
   path: string;
+  chuong: string;
+  label?: string; // dòng gom câu mới gắn tới tầng chương hoặc học phần
   dang: string[];
   ghi_chu: string;
 }
 
+export interface CurriculumGrade {
+  ten: string;
+  slug: string;
+  bac: string;
+  ghi_chu: string;
+  chuong: { ten: string; path: string }[];
+  chu_de: CurriculumTopic[];
+}
+
 export interface Curriculum {
-  grades: { ten: string; slug: string; chu_de: CurriculumTopic[] }[];
+  grades: CurriculumGrade[];
   api: boolean;
   model: string;
   max_count: number;
@@ -214,6 +246,8 @@ export interface Curriculum {
 export interface CoverageTopic {
   name: string;
   path: string;
+  chuong: string;
+  label?: string; // dòng gom câu mới gắn tới tầng chương hoặc học phần
   dang: string[];
   in_curriculum: boolean;
   counts: Record<string, { approved: number; draft: number }>;
@@ -314,7 +348,15 @@ export const api = {
   updateQuestion: (code: string, source: string, status?: Status) =>
     request<Question>("PUT", `/api/questions/${encodeURIComponent(code)}`, { source, status }),
   deleteQuestion: (code: string) => request<void>("DELETE", `/api/questions/${encodeURIComponent(code)}`),
-  bulk: (body: { codes: string[]; add_tag?: string; level?: Level; status?: Status }) =>
+  bulkDelete: (codes: string[]) => request<{ deleted: number; kept: string[] }>("POST", "/api/questions/bulk-delete", { codes }),
+  moveTag: (source: string, target: string) => request<{ moved: number }>("POST", "/api/tags/move", { source, target }),
+  tagMoves: () => request<TagMove[]>("GET", "/api/tags/moves"),
+  applyTagMoves: () => request<{ moved: number }>("POST", "/api/tags/moves/apply"),
+  listTemplates: () => request<ExamTemplate[]>("GET", "/api/exam-templates"),
+  createTemplate: (t: TemplateIn) => request<ExamTemplate>("POST", "/api/exam-templates", t),
+  updateTemplate: (id: number, t: TemplateIn) => request<ExamTemplate>("PUT", `/api/exam-templates/${id}`, t),
+  deleteTemplate: (id: number) => request<void>("DELETE", `/api/exam-templates/${id}`),
+  bulk: (body: { codes: string[]; add_tag?: string; set_tag?: string; level?: Level; status?: Status }) =>
     request<{ updated: number }>("POST", "/api/questions/bulk", body),
   template: () => request<{ source: string }>("GET", "/api/template"),
   parse: (source: string) => request<Parsed[]>("POST", "/api/parse", { source }),

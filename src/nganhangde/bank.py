@@ -117,19 +117,112 @@ def bulk_update(
     add_tag: list[str] | None = None,
     level: Level | None = None,
     status: Status | None = None,
+    set_tag: list[str] | None = None,
 ) -> int:
-    """Gắn thêm thẻ, đặt mức độ hoặc trạng thái cho nhiều câu cùng lúc."""
+    """Gắn thêm thẻ, đổi hẳn thẻ (`set_tag` thay mọi thẻ cũ), đặt mức độ hoặc trạng thái cho nhiều câu."""
     node = get_or_create_path(session, add_tag) if add_tag else None
+    only = get_or_create_path(session, set_tag) if set_tag else None
     qs = list(session.scalars(select(Question).where(Question.code.in_(codes))))
+    old = {n.path for q in qs for n in q.tags} if only is not None else set()
     for q in qs:
+        if only is not None:
+            q.tags = [only]
         if node is not None and node not in q.tags:
             q.tags.append(node)
         if level is not None:
             q.level = level
         if status is not None:
             q.status = status
+    session.flush()
+    for path in old:
+        prune_tags(session, path)
     session.commit()
     return len(qs)
+
+
+def bulk_delete(session: Session, codes: list[str]) -> tuple[int, list[str]]:
+    """Xoá nhiều câu; câu đã nằm trong đề thì giữ lại. Trả về (số câu đã xoá, mã câu giữ lại)."""
+    from .models import ExamItem
+
+    qs = list(session.scalars(select(Question).where(Question.code.in_(codes))))
+    used = set(session.scalars(select(ExamItem.question_id).where(ExamItem.question_id.in_([q.id for q in qs]))))
+    old = {n.path for q in qs for n in q.tags}
+    kept = [q.code for q in qs if q.id in used]
+    for q in qs:
+        if q.id not in used:
+            q.tags = []
+            session.delete(q)
+    session.flush()
+    for path in old:
+        prune_tags(session, path)
+    session.commit()
+    return len(qs) - len(kept), kept
+
+
+def tag_path(tag: str) -> str:
+    """Đường dẫn slug từ tên ("Lớp 12 / Vectơ") hoặc slug ("lop-12/vecto")."""
+    return "/".join(slugify(p) for p in tag.split("/") if p.strip())
+
+
+def _subtree(path: str):
+    return (TaxonomyNode.path == path) | TaxonomyNode.path.startswith(path + "/")
+
+
+def prune_tags(session: Session, path: str) -> int:
+    """Xoá các nút không còn câu nào trong nhánh, từ `path` đi lên gốc (kể cả nút con của nó)."""
+    n = 0
+    parts = path.split("/")
+    candidates = list(session.scalars(select(TaxonomyNode).where(_subtree(path))))
+    candidates += list(session.scalars(
+        select(TaxonomyNode).where(TaxonomyNode.path.in_(["/".join(parts[:i]) for i in range(1, len(parts))]))
+    ))
+    for node in sorted(candidates, key=lambda x: -x.path.count("/")):
+        used = session.scalar(
+            select(QuestionTag.question_id)
+            .join(TaxonomyNode, TaxonomyNode.id == QuestionTag.node_id)
+            .where(_subtree(node.path))
+            .limit(1)
+        )
+        has_children = session.scalar(select(TaxonomyNode.id).where(TaxonomyNode.parent_id == node.id).limit(1))
+        if used is None and has_children is None:
+            session.delete(node)
+            session.flush()
+            n += 1
+    return n
+
+
+def move_tag(session: Session, source: str, target: list[str]) -> int:
+    """Chuyển mọi câu có thẻ thuộc nhánh `source` sang thẻ `target` (thay các thẻ trong nhánh đó,
+    giữ thẻ khác), rồi xoá các nút đã trống. Trả về số câu được chuyển. Nếu đích nằm trong nhánh
+    nguồn (ví dụ chương -> một chủ đề của chương) thì chỉ chuyển câu gắn đúng nút nguồn."""
+    src = tag_path(source)
+    dst_path = tag_path(" / ".join(target))
+    if dst_path == src:
+        raise BankError("thẻ đích trùng thẻ nguồn")
+    inside = dst_path.startswith(src + "/")
+    nodes = list(session.scalars(select(TaxonomyNode).where(TaxonomyNode.path == src if inside else _subtree(src))))
+    ids = {n.id for n in nodes}
+    qs = list(session.scalars(
+        select(Question).where(Question.id.in_(select(QuestionTag.question_id).where(QuestionTag.node_id.in_(ids))))
+    )) if ids else []
+    if not qs:
+        return 0
+    dst = get_or_create_path(session, target)
+    for q in qs:
+        rest = [n for n in q.tags if n.id not in ids]
+        q.tags = rest + ([dst] if dst not in rest else [])
+    session.flush()
+    prune_tags(session, src)
+    session.commit()
+    return len(qs)
+
+
+def count_in_tag(session: Session, tag: str) -> int:
+    return session.scalar(
+        select(func.count(func.distinct(QuestionTag.question_id)))
+        .join(TaxonomyNode, TaxonomyNode.id == QuestionTag.node_id)
+        .where(_subtree(tag_path(tag)))
+    ) or 0
 
 
 @dataclass
@@ -222,7 +315,7 @@ def import_questions(
 
 
 def _tag_filter(tag: str):
-    prefix = "/".join(slugify(p) for p in tag.split("/") if p.strip())
+    prefix = tag_path(tag)
     return (
         select(QuestionTag.question_id)
         .join(TaxonomyNode, TaxonomyNode.id == QuestionTag.node_id)
@@ -269,9 +362,12 @@ def find_questions(
     return list(session.scalars(stmt.order_by(Question.code)))
 
 
-def tag_tree(session: Session) -> list[tuple[TaxonomyNode, int, int]]:
-    """Trả về (nút, độ sâu, số câu thuộc nút và các nút con), duyệt theo thứ tự cây."""
+def tag_tree(session: Session, order: dict[str, int] | None = None) -> list[tuple[TaxonomyNode, int, int]]:
+    """Trả về (nút, độ sâu, số câu thuộc nút và các nút con), duyệt theo thứ tự cây. Nút có trong
+    `order` (đường dẫn -> thứ tự, ví dụ thứ tự khung chương trình) đứng trước, còn lại theo tên."""
+    order = order or {}
     nodes = list(session.scalars(select(TaxonomyNode).order_by(TaxonomyNode.name)))
+    nodes.sort(key=lambda n: order.get(n.path, len(order)))
     children: dict[int | None, list[TaxonomyNode]] = {}
     for node in nodes:
         children.setdefault(node.parent_id, []).append(node)

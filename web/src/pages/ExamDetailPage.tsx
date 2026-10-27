@@ -77,6 +77,9 @@ export default function ExamDetailPage() {
         <a className="button" href={`/api/exams/${exam.id}/files.zip`}>
           Tải tất cả (.zip)
         </a>
+        <Link className="button" to={`/de/moi?tu_de=${exam.id}`} title="Mở trang ghép đề với cùng các phần và ma trận, có thể lưu thành khung đề">
+          Ghép đề theo khung này
+        </Link>
         <button onClick={() => api.rebuildExam(exam.id).then(setExam)}>Biên dịch lại</button>
         <button className="danger" onClick={remove}>
           Xoá đề

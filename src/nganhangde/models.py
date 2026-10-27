@@ -1,4 +1,4 @@
-"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, đề, mã đề và lượt luyện đề."""
+"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, đề, khung đề, mã đề và lượt luyện đề."""
 
 from __future__ import annotations
 
@@ -133,6 +133,21 @@ class Exam(Base):
     builds: Mapped[list[Build]] = relationship(
         back_populates="exam", order_by="Build.id", cascade="all, delete-orphan"
     )
+
+
+class ExamTemplate(Base):
+    """Khung đề dùng lại khi ghép đề: các phần, loại câu, điểm và ma trận thẻ × mức độ × số câu.
+    `config` cùng dạng với phần gửi lên khi tạo đề (duration, variants, sections[].pick),
+    không gồm câu chọn tay vì đó là câu của riêng từng đề."""
+
+    __tablename__ = "exam_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class ExamItem(Base):

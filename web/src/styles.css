@@ -486,7 +486,9 @@ main {
 }
 
 /* Đề thi */
-a.button {
+a.button,
+label.button {
+  cursor: pointer;
   display: inline-block;
   border: 1px solid var(--border);
   background: var(--panel);
@@ -579,6 +581,8 @@ label.inline input[type="number"] {
 }
 .matrix input.count {
   width: 72px;
+  color: inherit;
+  font-size: inherit;
 }
 td.short {
   color: var(--bad);
@@ -1015,4 +1019,40 @@ summary {
   .gen-grid label.wide {
     grid-column: 1 / -1;
   }
+}
+
+/* Bảng độ phủ theo chương (học phần đại học) */
+.cov-chapter td {
+  background: var(--panel);
+  font-weight: 600;
+}
+.cov-indent {
+  padding-left: 20px !important;
+}
+
+/* Khung đề */
+.template-bar .toolbar {
+  margin: 0;
+}
+label.button:hover {
+  border-color: var(--accent);
+}
+.template-bar .hint {
+  margin: 6px 0 0;
+}
+
+/* Quản lý thẻ */
+.tags-page {
+  max-width: 1000px;
+}
+.tags-page .move-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+.tags-page .move-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

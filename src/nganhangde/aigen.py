@@ -56,42 +56,107 @@ def curriculum_path() -> Path:
     return Path(os.environ.get("NHD_CHUONG_TRINH", TEMPLATES / "chuong-trinh.toml"))
 
 
+def _topic(t: dict, names: list[str], chapter: dict | None) -> dict:
+    return {
+        "ten": t["ten"],
+        "slug": slugify(t["ten"]),
+        "names": names,
+        "path": "/".join(slugify(n) for n in names),
+        "chuong": chapter["ten"] if chapter else "",
+        "dang": list(t.get("dang", [])),
+        "ghi_chu": t.get("ghi_chu", ""),
+        "noi_dung": t.get("noi_dung", "").strip(),
+        "goi_y_trac_nghiem": list(chapter.get("goi_y_trac_nghiem", [])) if chapter else [],
+        "goi_y_tu_luan": list(chapter.get("goi_y_tu_luan", [])) if chapter else [],
+    }
+
+
 def load_curriculum() -> list[dict]:
-    """[{ten, slug, chu_de: [{ten, slug, path, dang, ghi_chu}]}], đường dẫn slug trùng cách đặt thẻ."""
+    """[{ten, slug, bac, ghi_chu, chuong: [{ten, path}], chu_de: [...]}]. Chủ đề xếp phẳng theo thứ tự
+    trong file; chủ đề của học phần đại học có thêm tầng chương trong `names` và `path` (đường dẫn
+    slug trùng cách đặt thẻ)."""
     with open(curriculum_path(), "rb") as f:
         data = tomllib.load(f)
     grades = []
     for g in data.get("lop", []):
-        gslug = slugify(g["ten"])
-        topics = [
-            {
-                "ten": t["ten"],
-                "slug": slugify(t["ten"]),
-                "path": f"{gslug}/{slugify(t['ten'])}",
-                "dang": list(t.get("dang", [])),
-                "ghi_chu": t.get("ghi_chu", ""),
-            }
-            for t in g.get("chu_de", [])
-        ]
-        grades.append({"ten": g["ten"], "slug": gslug, "chu_de": topics})
+        topics = [_topic(t, [g["ten"], t["ten"]], None) for t in g.get("chu_de", [])]
+        chapters = []
+        for ch in g.get("chuong", []):
+            chapters.append({"ten": ch["ten"], "path": f"{slugify(g['ten'])}/{slugify(ch['ten'])}"})
+            topics += [_topic(t, [g["ten"], ch["ten"], t["ten"]], ch) for t in ch.get("chu_de", [])]
+        grades.append({
+            "ten": g["ten"],
+            "slug": slugify(g["ten"]),
+            "bac": g.get("bac", "THPT"),
+            "ghi_chu": g.get("ghi_chu", ""),
+            "chuong": chapters,
+            "chu_de": topics,
+        })
     return grades
+
+
+def curriculum_order() -> dict[str, int]:
+    """Đường dẫn slug -> thứ tự trong khung chương trình (lớp, chương, chủ đề, dạng)."""
+    paths: list[str] = []
+    for g in load_curriculum():
+        paths.append(g["slug"])
+        paths += [c["path"] for c in g["chuong"]]
+        for t in g["chu_de"]:
+            paths.append(t["path"])
+            paths += [f"{t['path']}/{slugify(d)}" for d in t["dang"]]
+    return {p: i for i, p in enumerate(dict.fromkeys(paths))}
+
+
+def load_tag_moves() -> list[dict]:
+    """Quy tắc chuyển thẻ từ khung cũ ([[doi_the]] tu, den), quy tắc cụ thể hơn đứng trước."""
+    with open(curriculum_path(), "rb") as f:
+        data = tomllib.load(f)
+    rules = [{"from": r["tu"], "to": r["den"]} for r in data.get("doi_the", [])]
+    return sorted(rules, key=lambda r: -len(r["from"].split("/")))
+
+
+def find_topic(grade: str, topic: str) -> dict | None:
+    gslug, tslug = slugify(grade), slugify(topic)
+    for g in load_curriculum():
+        if g["slug"] == gslug:
+            return next((t for t in g["chu_de"] if t["slug"] == tslug), None)
+    return None
+
+
+def topic_names(grade: str, topic: str) -> list[str]:
+    """Đường dẫn tên thẻ của chủ đề, có tầng chương nếu khung chương trình có."""
+    t = find_topic(grade, topic)
+    return list(t["names"]) if t else [grade, topic]
 
 
 def coverage(session: Session, grade: str) -> dict:
     """Số câu theo chủ đề × mức độ của một lớp (gồm các chủ đề trong khung chương trình và
-    các chủ đề đã có trong ngân hàng). Đếm riêng câu đã duyệt và câu nháp."""
+    các chủ đề đã có trong ngân hàng). Đếm riêng câu đã duyệt và câu nháp. Câu chỉ gắn tới
+    tầng chương (hoặc tầng lớp) được đếm vào một dòng riêng của chương đó."""
     gslug = slugify(grade)
     cur = next((g for g in load_curriculum() if g["slug"] == gslug), None)
+    topic_paths = [t["path"] for t in cur["chu_de"]] if cur else []
+    chapters = {c["path"]: c["ten"] for c in cur["chuong"]} if cur else {}
     rows = session.execute(
         select(TaxonomyNode.path, Question.id, Question.level, Question.status)
         .join(QuestionTag, QuestionTag.node_id == TaxonomyNode.id)
         .join(Question, Question.id == QuestionTag.question_id)
-        .where(TaxonomyNode.path.startswith(gslug + "/"))
+        .where((TaxonomyNode.path == gslug) | TaxonomyNode.path.startswith(gslug + "/"))
     ).all()
+
+    def topic_of(path: str) -> str:
+        for tp in topic_paths:
+            if path == tp or path.startswith(tp + "/"):
+                return tp
+        parts = path.split("/")
+        if len(parts) >= 2 and "/".join(parts[:2]) in chapters:
+            return "/".join(parts[:3])
+        return "/".join(parts[:2])
+
     seen: set[tuple[str, int]] = set()
     counts: dict[str, dict] = {}
     for path, qid, level, status in rows:
-        topic = "/".join(path.split("/")[:2])
+        topic = topic_of(path)
         if (topic, qid) in seen:
             continue
         seen.add((topic, qid))
@@ -103,12 +168,24 @@ def coverage(session: Session, grade: str) -> dict:
 
     topics = []
     for t in cur["chu_de"] if cur else []:
-        topics.append({"name": t["ten"], "path": t["path"], "dang": t["dang"], "in_curriculum": True,
-                       "counts": {**empty(), **counts.pop(t["path"], {})}})
+        topics.append({"name": t["ten"], "path": t["path"], "chuong": t["chuong"], "dang": t["dang"],
+                       "in_curriculum": True, "counts": {**empty(), **counts.pop(t["path"], {})}})
     names = {n.path: n.name for n in session.scalars(select(TaxonomyNode).where(TaxonomyNode.path.in_(list(counts))))}
     for path in sorted(counts):
-        topics.append({"name": names.get(path, path), "path": path, "dang": [], "in_curriculum": False,
-                       "counts": {**empty(), **counts[path]}})
+        chapter = next((name for cp, name in chapters.items() if path == cp or path.startswith(cp + "/")), "")
+        row = {"name": names.get(path, path), "path": path, "chuong": chapter, "dang": [],
+               "in_curriculum": False, "counts": {**empty(), **counts[path]}}
+        if path in chapters:
+            row["label"] = "Câu chưa gắn chủ đề"
+        elif path == gslug:
+            row["label"] = "Câu chưa gắn chương" if chapters else "Câu chưa gắn chủ đề"
+        topics.append(row)
+    # Dòng ngoài khung đứng cuối chương của nó (hoặc cuối bảng)
+    chapter_order = {c["ten"]: i for i, c in enumerate(cur["chuong"])} if cur else {}
+    topics = [t for _, t in sorted(
+        enumerate(topics),
+        key=lambda x: (chapter_order.get(x[1]["chuong"], len(chapter_order)), not x[1]["in_curriculum"], x[0]),
+    )]
     grade_name = cur["ten"] if cur else grade
     return {"grade": grade_name, "slug": gslug, "topics": topics}
 
@@ -117,7 +194,8 @@ def coverage(session: Session, grade: str) -> dict:
 
 SYSTEM_PROMPT = r"""Bạn là giáo viên Toán giàu kinh nghiệm ra đề ở Việt Nam, soạn câu hỏi cho ngân hàng đề bám sát
 Chương trình giáo dục phổ thông 2018 và cấu trúc đề thi tốt nghiệp THPT môn Toán từ năm 2025
-(với bậc đại học: theo giáo trình toán cao cấp phổ biến ở các trường đại học Việt Nam).
+(với bậc đại học: theo đề cương các học phần toán của Đại học Bách khoa Hà Nội như Giải tích 1, 2, 3,
+Đại số, Xác suất thống kê; khi yêu cầu có kèm kiến thức trọng tâm thì bám sát phần đó).
 Câu hỏi viết bằng tiếng Việt, công thức viết bằng LaTeX, theo định dạng gói ex_test như mô tả dưới đây.
 
 # Định dạng đầu ra
@@ -126,6 +204,8 @@ Chỉ trả về các khối câu hỏi, không viết lời dẫn, không đặ
 dòng chú thích khai báo thẻ và mức độ, ngay sau đó là khối \begin{ex}...\end{ex}:
 
 % @tags: <Lớp> / <Chủ đề> / <Dạng bài> ; @level: <NB|TH|VD|VDC>
+
+(Dòng thẻ chính xác cho từng lần sinh được ghi trong phần yêu cầu; với học phần đại học có thêm tầng chương.)
 \begin{ex}
   <đề bài>
   <phần lựa chọn tuỳ loại câu>
@@ -250,17 +330,18 @@ def build_prompt(session: Session, params: dict, n_examples: int = 2, n_avoid: i
     """Trả về (prompt hệ thống, prompt yêu cầu). Prompt hệ thống không đổi giữa các lần gọi."""
     p = normalize_params(params)
     level, qtype = Level(p["level"]), QuestionType(p["type"])
-    topic_path = f"{slugify(p['grade'])}/{slugify(p['topic'])}"
-    cur_topic = next(
-        (t for g in load_curriculum() for t in g["chu_de"] if t["path"] == topic_path), None
-    )
+    cur_topic = find_topic(p["grade"], p["topic"])
+    names = topic_names(p["grade"], p["topic"])
+    topic_path = "/".join(slugify(n) for n in names)
 
-    tag_line = f"{p['grade']} / {p['topic']}" + (f" / {p['dang']}" if p["dang"] else " / <Dạng bài>")
+    tag_line = " / ".join(names) + (f" / {p['dang']}" if p["dang"] else " / <Dạng bài>")
     lines = [
         f"Hãy soạn {p['count']} câu hỏi mới:",
-        f"- Lớp: {p['grade']}",
-        f"- Chủ đề: {p['topic']}" + (f" ({cur_topic['ghi_chu']})" if cur_topic and cur_topic["ghi_chu"] else ""),
+        f"- Lớp / học phần: {p['grade']}",
     ]
+    if cur_topic and cur_topic["chuong"]:
+        lines.append(f"- Chương: {cur_topic['chuong']}")
+    lines.append(f"- Chủ đề: {p['topic']}" + (f" ({cur_topic['ghi_chu']})" if cur_topic and cur_topic["ghi_chu"] else ""))
     if p["dang"]:
         lines.append(f"- Dạng bài: {p['dang']}")
     elif cur_topic and cur_topic["dang"]:
@@ -273,6 +354,13 @@ def build_prompt(session: Session, params: dict, n_examples: int = 2, n_avoid: i
         f"- Loại câu: {TYPE_NAMES[qtype]}",
         f"- Dòng thẻ của mỗi câu: % @tags: {tag_line} ; @level: {level.value}",
     ]
+    if cur_topic and cur_topic["noi_dung"]:
+        lines += ["", "Kiến thức trọng tâm của chủ đề (theo đề cương):", cur_topic["noi_dung"]]
+    hints = cur_topic and (cur_topic["goi_y_tu_luan"] if qtype == QuestionType.ESSAY else cur_topic["goi_y_trac_nghiem"])
+    if hints:
+        kind = "tự luận" if qtype == QuestionType.ESSAY else "trắc nghiệm"
+        lines += ["", f"Định hướng câu hỏi {kind} của chương (chỉ dùng các ý thuộc chủ đề trên):"]
+        lines += [f"- {h}" for h in hints]
     if p["notes"]:
         lines += ["", "Yêu cầu thêm của người soạn:", p["notes"]]
 
@@ -331,7 +419,7 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
     warnings, duplicate_of và `parsed` (ParsedQuestion, bỏ đi khi lưu vào lần sinh)."""
     p = normalize_params(params)
     level, qtype = Level(p["level"]), QuestionType(p["type"])
-    base = [p["grade"], p["topic"]]
+    base = topic_names(p["grade"], p["topic"])
     parsed = parse_text(strip_fences(text))
     for pq in parsed:
         pq.code = None  # mã và nguồn do hệ thống đặt
@@ -341,8 +429,8 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
         if not dang:
             # Giữ dạng bài mô hình ghi nếu dòng thẻ đúng lớp và chủ đề
             for t in pq.tags:
-                if len(t) >= 3 and [slugify(x) for x in t[:2]] == [slugify(x) for x in base]:
-                    dang = t[2]
+                if len(t) > len(base) and [slugify(x) for x in t[: len(base)]] == [slugify(x) for x in base]:
+                    dang = t[len(base)]
                     break
         pq.tags = [base + ([dang] if dang else [])]
         pq.warnings = [w for w in pq.warnings if "thẻ" not in w and "mức độ" not in w]

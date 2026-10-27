@@ -64,7 +64,8 @@ def app(db_url, tmp_path, monkeypatch):
 def test_curriculum_and_coverage(app):
     c = app.state.client
     cur = c.get("/api/gen/curriculum").json()
-    assert [g["ten"] for g in cur["grades"]] == ["Lớp 10", "Lớp 11", "Lớp 12", "Đại học"]
+    assert [g["ten"] for g in cur["grades"]] == ["Lớp 10", "Lớp 11", "Lớp 12", "Giải tích 1", "Giải tích 2",
+                                                    "Giải tích 3", "Đại số", "Xác suất thống kê"]
     assert cur["model"] == "claude-opus-5-5"
     lop12 = next(g for g in cur["grades"] if g["slug"] == "lop-12")
     assert any(t["path"] == "lop-12/nguyen-ham-va-tich-phan" for t in lop12["chu_de"])
@@ -75,6 +76,56 @@ def test_curriculum_and_coverage(app):
     assert {lv: cell["approved"] for lv, cell in vec["counts"].items()} == {"NB": 3, "TH": 7, "VD": 4, "VDC": 0}  # câu 2H3N1-1 chỉ có thẻ Lớp 12
     nguyen_ham = next(t for t in cov["topics"] if t["path"] == "lop-12/nguyen-ham-va-tich-phan")
     assert nguyen_ham["counts"]["NB"] == {"approved": 0, "draft": 0}
+
+
+UNI_OUTPUT = r"""% @tags: Giải tích 1 / Chương 1. Hàm số một biến số / Dãy số và giới hạn dãy số / Tiêu chuẩn tồn tại giới hạn ; @level: TH
+\begin{ex}
+  Dãy $u_n=\dfrac{n}{n+1}$ có giới hạn bằng
+  \choice{$0$}{\True $1$}{$2$}{$+\infty$}
+  \loigiai{$u_n=1-\dfrac1{n+1}\to1$.}
+\end{ex}
+"""
+
+UNI = {"grade": "Giải tích 1", "topic": "Dãy số và giới hạn dãy số", "level": "TH", "type": "mcq", "count": 1}
+
+
+def test_university_curriculum_has_chapters(app):
+    c = app.state.client
+    gt1 = next(g for g in c.get("/api/gen/curriculum").json()["grades"] if g["slug"] == "giai-tich-1")
+    assert gt1["bac"] == "Đại học" and len(gt1["chuong"]) == 3 and len(gt1["chu_de"]) == 14
+    day = next(t for t in gt1["chu_de"] if t["ten"] == "Dãy số và giới hạn dãy số")
+    assert day["names"] == ["Giải tích 1", "Chương 1. Hàm số một biến số", "Dãy số và giới hạn dãy số"]
+    assert day["path"] == "giai-tich-1/chuong-1-ham-so-mot-bien-so/day-so-va-gioi-han-day-so"
+
+    user = c.post("/api/gen/prompt", json=UNI).json()["user"]
+    assert "- Chương: Chương 1. Hàm số một biến số" in user
+    assert "% @tags: Giải tích 1 / Chương 1. Hàm số một biến số / Dãy số và giới hạn dãy số / <Dạng bài>" in user
+    assert "nguyên lý kẹp" in user  # kiến thức trọng tâm
+    assert "Định hướng câu hỏi trắc nghiệm" in user and "Maclaurin" in user
+    essay = c.post("/api/gen/prompt", json={**UNI, "type": "essay"}).json()["user"]
+    assert "Định hướng câu hỏi tự luận" in essay and "Rolle" in essay
+
+    items = c.post("/api/gen/check", json={"params": UNI, "output": UNI_OUTPUT}).json()
+    assert items[0]["state"] == "new"
+    assert items[0]["tags"] == [["Giải tích 1", "Chương 1. Hàm số một biến số", "Dãy số và giới hạn dãy số",
+                                 "Tiêu chuẩn tồn tại giới hạn"]]
+    b = c.post("/api/gen/batches", json={"params": UNI, "mode": "manual", "output": UNI_OUTPUT}).json()
+    code = b["items"][0]["code"]
+
+    # Câu chỉ gắn tới tầng chương có dòng riêng trong bảng độ phủ
+    c.post("/api/questions/bulk", json={"codes": ["12V-001"], "set_tag": "Giải tích 1 / Chương 1. Hàm số một biến số"})
+    cov = c.get("/api/gen/coverage", params={"grade": "Giải tích 1"}).json()["topics"]
+    assert [t["name"] for t in cov[:2]] == ["Tập số, trị tuyệt đối và các thuộc tính của hàm số",
+                                            "Dãy số và giới hạn dãy số"]
+    assert cov[1]["chuong"] == "Chương 1. Hàm số một biến số" and cov[1]["counts"]["TH"]["draft"] == 1
+    extra = [t for t in cov if not t["in_curriculum"]]
+    assert [(t["name"], t["chuong"], t["label"]) for t in extra] == [
+        ("Chương 1. Hàm số một biến số", "Chương 1. Hàm số một biến số", "Câu chưa gắn chủ đề")]
+
+    # Cây thẻ theo thứ tự khung chương trình
+    tags = [t["path"] for t in c.get("/api/tags").json()]
+    assert tags.index("giai-tich-1/chuong-1-ham-so-mot-bien-so/day-so-va-gioi-han-day-so") < len(tags)
+    assert c.get(f"/api/questions/{code}").json()["status"] == "draft"
 
 
 def test_prompt_contents(app):

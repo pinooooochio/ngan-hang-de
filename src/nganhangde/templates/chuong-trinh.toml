@@ -1,7 +1,19 @@
 # Khung chương trình môn Toán dùng cho bảng độ phủ và prompt sinh câu hỏi.
 # THPT theo Chương trình giáo dục phổ thông 2025 (các bộ sách chung nội dung, thứ tự chương có thể khác).
 # Tên lớp và chủ đề nên trùng với thẻ trong ngân hàng ("Lớp 12 / Nguyên hàm và tích phân / Tích phân").
+# Đại học theo đề cương các học phần của Đại học Bách khoa Hà Nội: mỗi học phần là một nhánh gốc,
+# chia bốn tầng Học phần / Chương / Chủ đề / Dạng ("Giải tích 1 / Chương 1. Hàm số một biến số /
+# Dãy số và giới hạn dãy số / Tiêu chuẩn tồn tại giới hạn").
 # Sửa file này để thêm chủ đề, dạng bài hoặc đổi cách gọi tên.
+#
+# Các trường:
+#   [[lop]]                ten, bac ("THPT" hoặc "Đại học", mặc định THPT), ghi_chu
+#   [[lop.chu_de]]         chủ đề trực tiếp dưới lớp (THPT)
+#   [[lop.chuong]]         chương của học phần (đại học): ten, goi_y_trac_nghiem, goi_y_tu_luan
+#   [[lop.chuong.chu_de]]  chủ đề trong chương
+#   chủ đề:                ten, dang (danh sách dạng bài), ghi_chu, noi_dung (kiến thức trọng tâm,
+#                          đưa vào prompt sinh câu)
+#   [[doi_the]]            tu, den: chuyển câu từ thẻ cũ sang thẻ mới (trang Quản lý thẻ)
 
 [[lop]]
 ten = "Lớp 10"
@@ -109,17 +121,574 @@ ten = "Lớp 12"
   ten = "Xác suất có điều kiện"
   dang = ["Xác suất có điều kiện", "Công thức xác suất toàn phần và công thức Bayes"]
 
+# ==================== Đại học (khung Đại học Bách khoa Hà Nội) ====================
+
 [[lop]]
-ten = "Đại học"
+ten = "Giải tích 1"
+bac = "Đại học"
+ghi_chu = "Theo đề cương Giải tích 1 (cấu trúc chương trình, khung kiến thức trọng tâm và định hướng ma trận câu hỏi)"
 
-  [[lop.chu_de]]
-  ten = "Giải tích"
-  dang = ["Giới hạn và liên tục", "Đạo hàm và vi phân", "Tích phân", "Chuỗi số"]
+  [[lop.chuong]]
+  ten = "Chương 1. Hàm số một biến số"
+  goi_y_trac_nghiem = [
+    "TXĐ và MGT: tìm TXĐ của hàm chứa hàm lượng giác ngược (arcsin, arccos) hoặc logarit",
+    "Thuộc tính hàm số: nhận biết tính chẵn/lẻ, xác định chu kỳ tuần hoàn T của tổng các hàm lượng giác",
+    "Giới hạn VCB: tìm VCB tương đương, tính giới hạn bằng ngắt bỏ VCB bậc cao",
+    "Điểm gián đoạn: cho hàm số phân nhánh, phân loại điểm gián đoạn tại x0",
+    "Đạo hàm cấp cao: tính f^(n)(0) dựa trên so sánh hệ số khai triển Maclaurin",
+  ]
+  goi_y_tu_luan = [
+    "Tính giới hạn phức tạp: khử dạng vô định bằng cách phối hợp khai triển Maclaurin và L'Hospital",
+    "Chứng minh nghiệm / bất đẳng thức: dùng định lý Rolle, Lagrange hoặc xét tính đơn điệu hàm số",
+    "Khảo sát đường cong tham số / tọa độ cực: tìm các đường tiệm cận và lập bảng biến thiên",
+  ]
 
-  [[lop.chu_de]]
-  ten = "Đại số tuyến tính"
-  dang = ["Ma trận và định thức", "Hệ phương trình tuyến tính", "Không gian vectơ", "Trị riêng và vectơ riêng"]
+    [[lop.chuong.chu_de]]
+    ten = "Tập số, trị tuyệt đối và các thuộc tính của hàm số"
+    ghi_chu = "§1–§3"
+    dang = [
+      "Tập số và bất đẳng thức trị tuyệt đối",
+      "Tập xác định và tập giá trị",
+      "Tính đơn điệu, bị chặn, chẵn lẻ và tuần hoàn",
+      "Hàm hợp và hàm ngược",
+      "Hàm sơ cấp cơ bản và hàm lượng giác ngược",
+    ]
+    noi_dung = '''
+Tập số và trị tuyệt đối: $\mathbb{N}\subset\mathbb{Z}\subset\mathbb{Q}\subset\mathbb{R}$; $|x+y|\le|x|+|y|$, $|x-y|\ge\big||x|-|y|\big|$.
+Thuộc tính hàm số: tập xác định, tập giá trị; tính đơn điệu, bị chặn; hàm chẵn/lẻ (đối xứng qua trục tung / gốc tọa độ); hàm tuần hoàn; hàm hợp và hàm ngược.
+Hàm sơ cấp cơ bản: lũy thừa, mũ, logarit, lượng giác và lượng giác ngược ($\arcsin x$, $\arccos x$, $\arctan x$, $\operatorname{arccot} x$).
+'''
 
-  [[lop.chu_de]]
-  ten = "Xác suất thống kê"
-  dang = ["Biến cố và xác suất", "Biến ngẫu nhiên", "Ước lượng và kiểm định"]
+    [[lop.chuong.chu_de]]
+    ten = "Dãy số và giới hạn dãy số"
+    ghi_chu = "§4"
+    dang = [
+      "Định nghĩa giới hạn dãy số",
+      "Tính chất và phép toán trên giới hạn dãy",
+      "Tiêu chuẩn tồn tại giới hạn",
+    ]
+    noi_dung = '''
+Định nghĩa: dãy số, giới hạn hữu hạn ($\epsilon - N$), giới hạn vô cùng.
+Tính chất và phép toán: giới hạn duy nhất, dãy hội tụ thì bị chặn, các phép toán đại số trên giới hạn dãy.
+Tiêu chuẩn tồn tại giới hạn: dãy đơn điệu và bị chặn thì hội tụ; nguyên lý kẹp; tiêu chuẩn Cauchy.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Giới hạn hàm số, vô cùng bé và vô cùng lớn"
+    ghi_chu = "§5–§6"
+    dang = [
+      "Giới hạn hàm số và giới hạn một phía",
+      "So sánh vô cùng bé và vô cùng bé tương đương",
+      "Tính giới hạn bằng thay tương đương và ngắt bỏ VCB bậc cao",
+      "So sánh vô cùng lớn",
+    ]
+    noi_dung = '''
+Giới hạn hàm số: định nghĩa ($\epsilon - \delta$), giới hạn một phía ($x\to x_0^+$, $x\to x_0^-$), giới hạn tại vô cực.
+Vô cùng bé: so sánh VCB (cùng bậc, bậc cao hơn, tương đương). VCB tương đương cơ bản khi $x\to0$: $x\sim\sin x\sim\tan x\sim\arcsin x\sim\arctan x\sim e^x-1\sim\ln(1+x)$; $1-\cos x\sim\frac{x^2}{2}$; $(1+x)^a-1\sim ax$.
+Quy tắc tính giới hạn bằng VCB: thay tương đương, ngắt bỏ VCB bậc cao.
+Vô cùng lớn: so sánh tốc độ tăng khi $x\to+\infty$: $a^x \succ x^\alpha \succ \ln x$.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Hàm số liên tục và điểm gián đoạn"
+    ghi_chu = "§7"
+    dang = [
+      "Xét tính liên tục của hàm số",
+      "Các định lý về hàm liên tục",
+      "Phân loại điểm gián đoạn",
+    ]
+    noi_dung = '''
+Khái niệm: liên tục tại $x_0$, liên tục một phía, liên tục trên khoảng/đoạn; sự liên tục của hàm sơ cấp, hàm hợp, hàm ngược.
+Định lý: Weierstrass (bị chặn, đạt GTLN/GTNN trên $[a,b]$); Cantor (liên tục đều); Bolzano–Cauchy (tồn tại nghiệm, nhận mọi giá trị trung gian).
+Điểm gián đoạn: loại 1 (bỏ được khi $\lim_{x\to x_0^+}f=\lim_{x\to x_0^-}f\ne f(x_0)$; có bước nhảy); loại 2.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Đạo hàm và vi phân"
+    ghi_chu = "§8"
+    dang = [
+      "Tính đạo hàm, đạo hàm hàm hợp và hàm ngược",
+      "Vi phân và tính gần đúng",
+      "Đạo hàm và vi phân cấp cao, công thức Leibniz",
+    ]
+    noi_dung = '''
+Đạo hàm: ý nghĩa, quy tắc tính đạo hàm hàm hợp, đạo hàm hàm ngược.
+Vi phân: $df(x)=f'(x)\,dx$, tính bất biến của dạng vi phân cấp 1; tính gần đúng $f(x_0+\Delta x)\approx f(x_0)+f'(x_0)\Delta x$.
+Cấp cao: đạo hàm cấp $n$, công thức Leibniz $(uv)^{(n)}=\sum_{k=0}^n C_n^k u^{(n-k)}v^{(k)}$; vi phân cấp $n$: $d^nf=f^{(n)}(x)\,dx^n$.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Định lý về hàm khả vi, khai triển Taylor–Maclaurin và quy tắc L'Hospital"
+    ghi_chu = "§9"
+    dang = [
+      "Định lý Fermat, Rolle, Lagrange, Cauchy",
+      "Khai triển Taylor–Maclaurin",
+      "Đạo hàm cấp cao tại một điểm qua khai triển Maclaurin",
+      "Quy tắc L'Hospital và các dạng vô định",
+    ]
+    noi_dung = '''
+Định lý giá trị trung bình: Fermat, Rolle, Lagrange, Cauchy.
+Khai triển Taylor/Maclaurin với phần dư Peano $o(x^n)$; khai triển của $e^x$, $\sin x$, $\cos x$, $\ln(1+x)$, $(1+x)^\alpha$.
+Quy tắc L'Hospital: khử dạng $\frac00$, $\frac\infty\infty$; biến đổi các dạng $0\cdot\infty$, $\infty-\infty$, $1^\infty$, $0^0$, $\infty^0$.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Khảo sát và vẽ đồ thị hàm số"
+    ghi_chu = "§10"
+    dang = [
+      "Tiệm cận của hàm số y = f(x)",
+      "Đường cong cho dưới dạng tham số",
+      "Đường cong trong tọa độ cực",
+    ]
+    noi_dung = '''
+Tiệm cận đứng, ngang, xiên của: hàm $y=f(x)$; đường cong tham số $x=x(t)$, $y=y(t)$; đường cong trong tọa độ cực $r=r(\phi)$. Lập bảng biến thiên, vẽ đồ thị.
+'''
+
+  [[lop.chuong]]
+  ten = "Chương 2. Phép tính tích phân một biến số"
+  goi_y_trac_nghiem = [
+    "Tính chất và đạo hàm theo cận thay đổi: tính d/dx của tích phân có cận x^2 đến x^3",
+    "Khảo sát sự hội tụ tích phân suy rộng: tích phân chứa tham số alpha, chọn điều kiện để tích phân hội tụ",
+    "Công thức ứng dụng hình học: chọn biểu thức đúng tính diện tích miền cực (Cardioid, Lemniscate) hoặc thể tích khối tròn xoay",
+  ]
+  goi_y_tu_luan = [
+    "Kỹ thuật tính tích phân: tích phân phân thức hữu tỷ, hàm vô tỷ hoặc lượng giác phức tạp",
+    "Xét sự hội tụ tích phân suy rộng: thay VCB tương đương ở lân cận điểm kỳ dị để so sánh với tích phân chuẩn",
+    "Chứng minh bất đẳng thức tích phân: dùng bất đẳng thức Cauchy–Schwarz đối với tích phân",
+  ]
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân bất định"
+    ghi_chu = "§1"
+    dang = [
+      "Bảng tích phân cơ bản và phương pháp đổi biến",
+      "Tích phân từng phần",
+      "Tích phân hàm phân thức hữu tỷ",
+      "Tích phân hàm lượng giác",
+      "Tích phân hàm vô tỷ",
+    ]
+    noi_dung = '''
+Nguyên hàm, tính tuyến tính, bảng tích phân cơ bản.
+Phương pháp: biến đổi biểu thức vi phân, đổi biến (loại 1, loại 2); từng phần $\int u\,dv=uv-\int v\,du$.
+Phân thức hữu tỷ: hệ số bất định, phân tích $\frac{P(x)}{Q(x)}$ thành phân thức cơ bản.
+Lượng giác: phép thế $t=\tan\frac x2$, dạng chẵn/lẻ mũ, hạ bậc.
+Vô tỷ: thế lượng giác ($x=a\tan t$, $x=a\sin t$), phép thế Euler, dạng $\int\frac{px+q}{\sqrt{ax^2+bx+c}}\,dx$.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân xác định"
+    ghi_chu = "§2"
+    dang = [
+      "Tổng Riemann và điều kiện khả tích",
+      "Tính chất và định lý giá trị trung bình",
+      "Hàm tích phân cận trên thay đổi",
+      "Tính tích phân xác định",
+      "Bất đẳng thức tích phân",
+    ]
+    noi_dung = '''
+Định nghĩa tổng Riemann; lớp hàm khả tích (liên tục, bị chặn có hữu hạn điểm gián đoạn, đơn điệu).
+Tính chất: tuyến tính, cộng tính trên các đoạn, bất đẳng thức tích phân, định lý giá trị trung bình thứ nhất.
+Cận trên thay đổi: $F(x)=\int_a^x f(t)\,dt \Rightarrow F'(x)=f(x)$.
+Tính: Newton–Leibniz $\int_a^b f=F(b)-F(a)$; đổi biến và từng phần với tích phân xác định.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân suy rộng"
+    ghi_chu = "§3"
+    dang = [
+      "Tích phân suy rộng loại 1 (cận vô hạn)",
+      "Tích phân suy rộng loại 2 (hàm không bị chặn)",
+      "Tiêu chuẩn so sánh",
+      "Hội tụ tuyệt đối và bán hội tụ",
+    ]
+    noi_dung = '''
+Loại 1: $\int_a^{+\infty}f=\lim_{A\to+\infty}\int_a^A f$; chuẩn $\int_1^{+\infty}\frac{dx}{x^\alpha}$ hội tụ $\iff\alpha>1$.
+Loại 2: $\int_a^b f=\lim_{t\to b^-}\int_a^t f$; chuẩn $\int_a^b\frac{dx}{(b-x)^\alpha}$ hội tụ $\iff\alpha<1$.
+Tiêu chuẩn so sánh 1 ($0\le f\le g$), so sánh 2 (tỉ số $k=\lim\frac fg$).
+Hội tụ tuyệt đối kéo theo hội tụ; tích phân Dirichlet $\int_0^{+\infty}\frac{\sin x}{x}dx$ bán hội tụ.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Ứng dụng hình học của tích phân xác định"
+    ghi_chu = "§4"
+    dang = [
+      "Diện tích hình phẳng",
+      "Độ dài đường cong",
+      "Thể tích vật thể và thể tích tròn xoay",
+      "Diện tích mặt tròn xoay",
+    ]
+    noi_dung = '''
+Diện tích: Descartes $S=\int_a^b|f-g|\,dx$; tham số $S=\int|\psi(t)\phi'(t)|\,dt$; tọa độ cực $S=\frac12\int_\alpha^\beta r^2(\phi)\,d\phi$.
+Độ dài cung: $\int\sqrt{1+f'^2}\,dx$; $\int\sqrt{x'^2+y'^2}\,dt$; $\int\sqrt{r^2+r'^2}\,d\phi$.
+Thể tích: thiết diện $V=\int S(x)\,dx$; quay quanh $Ox$: $\pi\int f^2\,dx$; quay quanh $Oy$: $2\pi\int x|f(x)|\,dx$.
+Diện tích mặt tròn xoay: $S_x=2\pi\int|f|\sqrt{1+f'^2}\,dx$, $S_y=2\pi\int|\phi(y)|\sqrt{1+\phi'^2}\,dy$.
+'''
+
+  [[lop.chuong]]
+  ten = "Chương 3. Hàm số nhiều biến số"
+  goi_y_trac_nghiem = [
+    "Đạo hàm riêng và vi phân cấp 1: cho hàm 2 biến, tính f'_x(1,2), f'_y(1,2) hoặc viết vi phân toàn phần dz",
+    "Gradient và đạo hàm theo hướng: tính grad f tại M0 và đạo hàm theo hướng vectơ l",
+    "Điểm dừng và cực trị tự do: tìm điểm dừng của z = f(x,y) hoặc xét dấu s^2 - rt để nhận biết loại cực trị",
+    "Đạo hàm hàm ẩn: tính z'_x, z'_y từ phương trình kiểu x^3 + y^3 + z^3 - 3xyz = 0",
+  ]
+  goi_y_tu_luan = [
+    "Chứng minh giới hạn không tồn tại: xét các họ đường thẳng y = kx dần tới (0,0)",
+    "Cực trị tự do / có điều kiện: tìm cực trị của z = f(x,y) với ràng buộc phi(x,y) = 0 bằng nhân tử Lagrange",
+    "GTLN và GTNN của z = f(x,y) trên miền đóng bị chặn D (tam giác, hình tròn)",
+  ]
+
+    [[lop.chuong.chu_de]]
+    ten = "Giới hạn và liên tục của hàm nhiều biến"
+    ghi_chu = "§1"
+    dang = [
+      "Tập xác định của hàm nhiều biến",
+      "Giới hạn và chứng minh không tồn tại giới hạn",
+      "Giới hạn lặp",
+      "Tính liên tục của hàm nhiều biến",
+    ]
+    noi_dung = '''
+Tập xác định trong $\mathbb R^2$, $\mathbb R^3$; dãy điểm $M_n(x_n,y_n)\to M_0(x_0,y_0)$.
+Giới hạn song hành $\lim_{(x,y)\to(x_0,y_0)}f(x,y)$; chứng minh không tồn tại giới hạn bằng cách cho $(x,y)\to(0,0)$ theo các đường $y=kx$ khác nhau.
+Phân biệt giới hạn song hành và giới hạn lặp $\lim_{x\to x_0}\lim_{y\to y_0}f(x,y)$. Liên tục trên tập mở/đóng.
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Đạo hàm riêng, vi phân toàn phần và gradient"
+    ghi_chu = "§2"
+    dang = [
+      "Đạo hàm riêng cấp một và cấp cao",
+      "Vi phân toàn phần và tính gần đúng",
+      "Đạo hàm hàm hợp",
+      "Đạo hàm hàm ẩn",
+      "Gradient và đạo hàm theo hướng",
+    ]
+    noi_dung = '''
+Đạo hàm riêng cấp 1, cấp cao ($f''_{xx}$, $f''_{xy}$, $f''_{yx}$, $f''_{yy}$); định lý Schwarz $f''_{xy}=f''_{yx}$ khi liên tục.
+Vi phân toàn phần $dz=f'_x\,dx+f'_y\,dy$; $d^2z=f''_{xx}dx^2+2f''_{xy}dx\,dy+f''_{yy}dy^2$; tính gần đúng.
+Hàm hợp $F(x,y)=f(u(x,y),v(x,y))$, ma trận Jacobi; hàm ẩn $y'=-\frac{F'_x}{F'_y}$, $z'_x=-\frac{F'_x}{F'_z}$, $z'_y=-\frac{F'_y}{F'_z}$.
+Gradient $\overrightarrow{\operatorname{grad}}f=(f'_x,f'_y,f'_z)$; đạo hàm theo hướng $\frac{\partial f}{\partial\vec l}=\overrightarrow{\operatorname{grad}}f\cdot\vec l$ ($\vec l$ đơn vị).
+'''
+
+    [[lop.chuong.chu_de]]
+    ten = "Cực trị của hàm số nhiều biến số"
+    ghi_chu = "§3"
+    dang = [
+      "Cực trị tự do",
+      "Cực trị có điều kiện",
+      "Giá trị lớn nhất và nhỏ nhất trên miền đóng bị chặn",
+    ]
+    noi_dung = '''
+Cực trị tự do: điểm dừng $f'_x=f'_y=0$; đặt $r=f''_{xx}$, $s=f''_{xy}$, $t=f''_{yy}$: $s^2-rt<0$ có cực trị ($r>0$ cực tiểu, $r<0$ cực đại), $s^2-rt>0$ không có cực trị (điểm yên ngựa), $s^2-rt=0$ chưa kết luận.
+Cực trị có điều kiện $\phi(x,y)=0$: rút thế; nhân tử Lagrange $L=f+\lambda\phi$, giải $L'_x=L'_y=L'_\lambda=0$, xét $d^2L$ trên $\phi'_xdx+\phi'_ydy=0$.
+GTLN, GTNN trên miền đóng bị chặn $D$: so sánh giá trị tại điểm dừng trong $D$ và điểm cực trị trên biên.
+'''
+
+# Các học phần dưới đây là bản nháp theo khung chung của Bách khoa, chưa đối chiếu đề cương chi tiết.
+
+[[lop]]
+ten = "Giải tích 2"
+bac = "Đại học"
+ghi_chu = "Bản nháp, chưa đối chiếu đề cương chi tiết"
+
+  [[lop.chuong]]
+  ten = "Chương 1. Ứng dụng của phép tính vi phân trong hình học"
+
+    [[lop.chuong.chu_de]]
+    ten = "Ứng dụng trong hình học phẳng"
+    dang = ["Tiếp tuyến và pháp tuyến của đường cong phẳng", "Độ cong", "Hình bao của họ đường cong"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Ứng dụng trong hình học không gian"
+    dang = ["Tiếp tuyến và pháp diện của đường cong", "Tiếp diện và pháp tuyến của mặt cong"]
+
+  [[lop.chuong]]
+  ten = "Chương 2. Tích phân bội"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân kép"
+    dang = ["Tính trong tọa độ Descartes", "Đổi thứ tự lấy tích phân", "Đổi biến và tọa độ cực"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân bội ba"
+    dang = ["Tính trong tọa độ Descartes", "Tọa độ trụ", "Tọa độ cầu"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Ứng dụng của tích phân bội"
+    dang = ["Diện tích và thể tích", "Khối lượng, trọng tâm, mômen quán tính"]
+
+  [[lop.chuong]]
+  ten = "Chương 3. Tích phân phụ thuộc tham số"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân xác định phụ thuộc tham số"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân suy rộng phụ thuộc tham số"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân Euler"
+    dang = ["Hàm Gamma", "Hàm Beta"]
+
+  [[lop.chuong]]
+  ten = "Chương 4. Tích phân đường"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân đường loại một"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân đường loại hai"
+    dang = ["Tính trực tiếp", "Công thức Green", "Tích phân không phụ thuộc đường đi"]
+
+  [[lop.chuong]]
+  ten = "Chương 5. Tích phân mặt"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân mặt loại một"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tích phân mặt loại hai"
+    dang = ["Tính trực tiếp", "Công thức Ostrogradsky", "Công thức Stokes"]
+
+  [[lop.chuong]]
+  ten = "Chương 6. Lý thuyết trường"
+
+    [[lop.chuong.chu_de]]
+    ten = "Trường vô hướng"
+    dang = ["Đạo hàm theo hướng", "Gradient"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Trường vectơ"
+    dang = ["Thông lượng và divergence", "Hoàn lưu và rotation", "Trường thế và trường ống"]
+
+[[lop]]
+ten = "Giải tích 3"
+bac = "Đại học"
+ghi_chu = "Bản nháp, chưa đối chiếu đề cương chi tiết"
+
+  [[lop.chuong]]
+  ten = "Chương 1. Chuỗi"
+
+    [[lop.chuong.chu_de]]
+    ten = "Chuỗi số"
+    dang = ["Chuỗi số dương và các tiêu chuẩn hội tụ", "Chuỗi đan dấu và tiêu chuẩn Leibniz", "Hội tụ tuyệt đối và bán hội tụ"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Chuỗi hàm số"
+    dang = ["Miền hội tụ", "Hội tụ đều và tiêu chuẩn Weierstrass"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Chuỗi lũy thừa"
+    dang = ["Bán kính và miền hội tụ", "Khai triển hàm thành chuỗi lũy thừa", "Tính tổng chuỗi"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Chuỗi Fourier"
+
+  [[lop.chuong]]
+  ten = "Chương 2. Phương trình vi phân"
+
+    [[lop.chuong.chu_de]]
+    ten = "Phương trình vi phân cấp một"
+    dang = ["Phương trình tách biến", "Phương trình đẳng cấp", "Phương trình tuyến tính và Bernoulli", "Phương trình vi phân toàn phần"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Phương trình vi phân cấp hai"
+    dang = ["Phương trình giảm cấp được", "Phương trình tuyến tính hệ số hằng", "Phương pháp biến thiên hằng số"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Hệ phương trình vi phân"
+
+  [[lop.chuong]]
+  ten = "Chương 3. Phương pháp toán tử Laplace"
+
+    [[lop.chuong.chu_de]]
+    ten = "Phép biến đổi Laplace và Laplace ngược"
+
+    [[lop.chuong.chu_de]]
+    ten = "Giải phương trình vi phân bằng phép biến đổi Laplace"
+
+[[lop]]
+ten = "Đại số"
+bac = "Đại học"
+ghi_chu = "Bản nháp, chưa đối chiếu đề cương chi tiết"
+
+  [[lop.chuong]]
+  ten = "Chương 1. Tập hợp, logic, ánh xạ và số phức"
+
+    [[lop.chuong.chu_de]]
+    ten = "Logic và tập hợp"
+
+    [[lop.chuong.chu_de]]
+    ten = "Ánh xạ"
+    dang = ["Đơn ánh, toàn ánh, song ánh", "Ánh xạ ngược và ánh xạ hợp"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Số phức"
+    dang = ["Dạng đại số", "Dạng lượng giác và công thức Moivre", "Căn bậc n và phương trình"]
+
+  [[lop.chuong]]
+  ten = "Chương 2. Ma trận, định thức và hệ phương trình tuyến tính"
+
+    [[lop.chuong.chu_de]]
+    ten = "Ma trận và định thức"
+    dang = ["Phép toán ma trận", "Tính định thức", "Ma trận nghịch đảo", "Hạng của ma trận"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Hệ phương trình tuyến tính"
+    dang = ["Phương pháp Cramer", "Phương pháp Gauss", "Biện luận theo tham số"]
+
+  [[lop.chuong]]
+  ten = "Chương 3. Không gian vectơ"
+
+    [[lop.chuong.chu_de]]
+    ten = "Không gian vectơ và không gian con"
+
+    [[lop.chuong.chu_de]]
+    ten = "Độc lập tuyến tính, cơ sở và số chiều"
+
+    [[lop.chuong.chu_de]]
+    ten = "Tọa độ và ma trận chuyển cơ sở"
+
+  [[lop.chuong]]
+  ten = "Chương 4. Ánh xạ tuyến tính"
+
+    [[lop.chuong.chu_de]]
+    ten = "Ánh xạ tuyến tính, nhân và ảnh"
+
+    [[lop.chuong.chu_de]]
+    ten = "Ma trận của ánh xạ tuyến tính"
+
+    [[lop.chuong.chu_de]]
+    ten = "Trị riêng, vectơ riêng và chéo hóa"
+
+  [[lop.chuong]]
+  ten = "Chương 5. Dạng toàn phương và không gian Euclid"
+
+    [[lop.chuong.chu_de]]
+    ten = "Dạng toàn phương"
+    dang = ["Đưa về dạng chính tắc", "Xét tính xác định dấu"]
+
+    [[lop.chuong.chu_de]]
+    ten = "Không gian Euclid"
+    dang = ["Tích vô hướng và trực giao", "Trực chuẩn hóa Gram–Schmidt", "Chéo hóa trực giao"]
+
+[[lop]]
+ten = "Xác suất thống kê"
+bac = "Đại học"
+ghi_chu = "Bản nháp, chưa đối chiếu đề cương chi tiết"
+
+  [[lop.chuong]]
+  ten = "Chương 1. Sự kiện ngẫu nhiên và phép tính xác suất"
+
+    [[lop.chuong.chu_de]]
+    ten = "Biến cố và định nghĩa xác suất"
+
+    [[lop.chuong.chu_de]]
+    ten = "Xác suất có điều kiện, công thức nhân và công thức cộng"
+
+    [[lop.chuong.chu_de]]
+    ten = "Công thức xác suất đầy đủ và công thức Bayes"
+
+    [[lop.chuong.chu_de]]
+    ten = "Dãy phép thử Bernoulli"
+
+  [[lop.chuong]]
+  ten = "Chương 2. Biến ngẫu nhiên và luật phân phối xác suất"
+
+    [[lop.chuong.chu_de]]
+    ten = "Biến ngẫu nhiên rời rạc"
+
+    [[lop.chuong.chu_de]]
+    ten = "Biến ngẫu nhiên liên tục"
+
+    [[lop.chuong.chu_de]]
+    ten = "Các phân phối xác suất thông dụng"
+    dang = ["Phân phối nhị thức", "Phân phối Poisson", "Phân phối chuẩn", "Phân phối đều và phân phối mũ"]
+
+  [[lop.chuong]]
+  ten = "Chương 3. Biến ngẫu nhiên nhiều chiều"
+
+    [[lop.chuong.chu_de]]
+    ten = "Phân phối đồng thời và phân phối biên"
+
+    [[lop.chuong.chu_de]]
+    ten = "Hiệp phương sai và hệ số tương quan"
+
+  [[lop.chuong]]
+  ten = "Chương 4. Thống kê và ước lượng tham số"
+
+    [[lop.chuong.chu_de]]
+    ten = "Mẫu ngẫu nhiên và các đặc trưng mẫu"
+
+    [[lop.chuong.chu_de]]
+    ten = "Ước lượng điểm"
+
+    [[lop.chuong.chu_de]]
+    ten = "Ước lượng khoảng"
+    dang = ["Khoảng tin cậy cho kỳ vọng", "Khoảng tin cậy cho tỷ lệ", "Khoảng tin cậy cho phương sai"]
+
+  [[lop.chuong]]
+  ten = "Chương 5. Kiểm định giả thuyết thống kê"
+
+    [[lop.chuong.chu_de]]
+    ten = "Kiểm định giả thuyết về một tham số"
+
+    [[lop.chuong.chu_de]]
+    ten = "Kiểm định so sánh hai tham số"
+
+# ==================== Chuyển thẻ từ khung đại học cũ ====================
+# Khung cũ gộp mọi môn đại học dưới "Đại học / <môn> / <dạng>". Dạng cũ rộng hơn chủ đề mới nên câu
+# cũ chỉ chuyển được tới tầng chương; vào Ngân hàng lọc theo chương rồi đổi thẻ chi tiết sau.
+# Quy tắc cụ thể hơn được áp dụng trước; quy tắc "Đại học / <môn>" gom phần còn lại.
+
+[[doi_the]]
+tu = "Đại học / Giải tích / Giới hạn và liên tục"
+den = "Giải tích 1 / Chương 1. Hàm số một biến số"
+
+[[doi_the]]
+tu = "Đại học / Giải tích / Đạo hàm và vi phân"
+den = "Giải tích 1 / Chương 1. Hàm số một biến số"
+
+[[doi_the]]
+tu = "Đại học / Giải tích / Tích phân"
+den = "Giải tích 1 / Chương 2. Phép tính tích phân một biến số"
+
+[[doi_the]]
+tu = "Đại học / Giải tích / Chuỗi số"
+den = "Giải tích 3 / Chương 1. Chuỗi / Chuỗi số"
+
+[[doi_the]]
+tu = "Đại học / Giải tích"
+den = "Giải tích 1"
+
+[[doi_the]]
+tu = "Đại học / Đại số tuyến tính / Ma trận và định thức"
+den = "Đại số / Chương 2. Ma trận, định thức và hệ phương trình tuyến tính / Ma trận và định thức"
+
+[[doi_the]]
+tu = "Đại học / Đại số tuyến tính / Hệ phương trình tuyến tính"
+den = "Đại số / Chương 2. Ma trận, định thức và hệ phương trình tuyến tính / Hệ phương trình tuyến tính"
+
+[[doi_the]]
+tu = "Đại học / Đại số tuyến tính / Không gian vectơ"
+den = "Đại số / Chương 3. Không gian vectơ"
+
+[[doi_the]]
+tu = "Đại học / Đại số tuyến tính / Trị riêng và vectơ riêng"
+den = "Đại số / Chương 4. Ánh xạ tuyến tính / Trị riêng, vectơ riêng và chéo hóa"
+
+[[doi_the]]
+tu = "Đại học / Đại số tuyến tính"
+den = "Đại số"
+
+[[doi_the]]
+tu = "Đại học / Xác suất thống kê / Biến cố và xác suất"
+den = "Xác suất thống kê / Chương 1. Sự kiện ngẫu nhiên và phép tính xác suất"
+
+[[doi_the]]
+tu = "Đại học / Xác suất thống kê / Biến ngẫu nhiên"
+den = "Xác suất thống kê / Chương 2. Biến ngẫu nhiên và luật phân phối xác suất"
+
+[[doi_the]]
+tu = "Đại học / Xác suất thống kê"
+den = "Xác suất thống kê"
