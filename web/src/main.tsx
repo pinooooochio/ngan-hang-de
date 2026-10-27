@@ -7,6 +7,7 @@ import ExamDetailPage from "./pages/ExamDetailPage";
 import ExamListPage from "./pages/ExamListPage";
 import ExamNewPage from "./pages/ExamNewPage";
 import AttemptPage from "./pages/AttemptPage";
+import BackupPage from "./pages/BackupPage";
 import GenBatchPage from "./pages/GenBatchPage";
 import GeneratePage from "./pages/GeneratePage";
 import ImportPage from "./pages/ImportPage";
@@ -31,6 +32,7 @@ function App() {
           <NavLink to="/de/moi">Ghép đề</NavLink>
           <NavLink to="/sinh">Sinh câu AI</NavLink>
           <NavLink to="/luyen">Luyện đề</NavLink>
+          <NavLink to="/sao-luu">Sao lưu</NavLink>
         </nav>
       </header>
       <main>
@@ -47,6 +49,7 @@ function App() {
           <Route path="/sinh/:id" element={<GenBatchPage />} />
           <Route path="/luyen" element={<PracticeHomePage />} />
           <Route path="/luyen/:id" element={<AttemptPage />} />
+          <Route path="/sao-luu" element={<BackupPage />} />
         </Routes>
       </main>
     </BrowserRouter>

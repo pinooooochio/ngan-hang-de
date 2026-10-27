@@ -1056,3 +1056,30 @@ label.button:hover {
   flex-direction: column;
   gap: 4px;
 }
+
+/* Sao lưu */
+.backup-page {
+  max-width: 1000px;
+}
+.backup-page .backup-actions {
+  padding-left: 0 !important;
+  flex-wrap: wrap;
+}
+.backup-page .checkbox {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.backup-page .restore-confirm {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+.backup-page .restore-confirm .toolbar {
+  padding-left: 0 !important;
+}
+.backup-page .row-actions {
+  display: flex;
+  gap: 12px;
+  white-space: nowrap;
+}

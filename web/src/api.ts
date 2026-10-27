@@ -299,6 +299,30 @@ export interface GenBatchDetail extends GenBatch {
   items: GenItem[];
 }
 
+export interface StoredBackup {
+  name: string;
+  size: number;
+  modified: string;
+  safety: boolean;
+}
+
+export interface BackupInfo {
+  tables: { name: string; label: string; count: number }[];
+  files: number;
+  files_size: number;
+  folder: string;
+  backups: StoredBackup[];
+}
+
+export interface BackupSummary {
+  created_at: string | null;
+  app_version: string | null;
+  database: string | null;
+  tables: Record<string, number>;
+  files: number;
+  warnings: string[];
+}
+
 export const LEVELS: { value: Level; label: string }[] = [
   { value: "NB", label: "Nhận biết" },
   { value: "TH", label: "Thông hiểu" },
@@ -317,10 +341,12 @@ export const levelLabel = (l: Level | null) => LEVELS.find((x) => x.value === l)
 export const typeLabel = (t: QType) => TYPES.find((x) => x.value === t)?.label ?? t;
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  // File (ví dụ bản sao lưu .zip) gửi nguyên nội dung, còn lại gửi JSON
+  const raw = body instanceof Blob;
   const res = await fetch(url, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    headers: body !== undefined ? { "Content-Type": raw ? "application/zip" : "application/json" } : undefined,
+    body: body !== undefined ? (raw ? body : JSON.stringify(body)) : undefined,
   });
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
@@ -397,5 +423,17 @@ export const api = {
   genBatches: () => request<GenBatch[]>("GET", "/api/gen/batches"),
   genBatch: (id: number) => request<GenBatchDetail>("GET", `/api/gen/batches/${id}`),
   genRetry: (id: number) => request<GenBatchDetail>("POST", `/api/gen/batches/${id}/retry`),
+  backupInfo: () => request<BackupInfo>("GET", "/api/backup/info"),
+  backupSave: (files: boolean) => request<{ name: string }>("POST", `/api/backup/save?files=${files}`),
+  backupDelete: (name: string) => request<void>("DELETE", `/api/backup/stored/${encodeURIComponent(name)}`),
+  // Truyền file .zip tải lên, hoặc tên một bản trong thư mục sao lưu trên máy chủ
+  backupInspect: (src: File | string) =>
+    typeof src === "string"
+      ? request<BackupSummary>("POST", `/api/backup/inspect?name=${encodeURIComponent(src)}`)
+      : request<BackupSummary>("POST", "/api/backup/inspect", src),
+  backupRestore: (src: File | string) =>
+    typeof src === "string"
+      ? request<BackupSummary & { safety_backup: string | null }>("POST", `/api/backup/restore?name=${encodeURIComponent(src)}`)
+      : request<BackupSummary & { safety_backup: string | null }>("POST", "/api/backup/restore", src),
   deleteAttempt: (id: number) => request<void>("DELETE", `/api/attempts/${id}`),
 };

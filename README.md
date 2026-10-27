@@ -15,7 +15,8 @@ docker compose up -d --build
 ```
 
 Mở http://localhost:8000. Lệnh này chạy PostgreSQL và máy chủ web (có sẵn XeLaTeX để xem trước PDF).
-Dữ liệu nằm trong volume `pgdata`, PDF của các đề trong volume `files`; tắt máy chủ không mất. Dùng dòng lệnh bên trong container:
+Dữ liệu nằm trong volume `pgdata`, PDF của các đề trong volume `files`; tắt máy chủ không mất, nhưng
+`docker compose down -v` hoặc gỡ Docker thì mất, nên hãy sao lưu (mục **Sao lưu** bên dưới). Dùng dòng lệnh bên trong container:
 
 ```bash
 docker compose exec app nhd import examples/vecto-khong-gian.tex
@@ -26,6 +27,34 @@ docker compose exec app nhd build examples/de-vecto.toml    # PDF ra thư mục 
 `ANTHROPIC_API_KEY=...` rồi chạy lại `docker compose up -d`.
 
 Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người dùng), nên cổng 8000 chỉ mở cho chính máy đó.
+
+## Sao lưu và khôi phục
+
+Trang **Sao lưu** (`/sao-luu`) có nút **Tải bản sao lưu**: một file `.zip` chứa toàn bộ dữ liệu (câu hỏi kể cả nháp, thẻ,
+khung đề, kho đề cùng mã đề và đáp án, lượt luyện, lịch sử sinh AI) và tuỳ chọn kèm các PDF đã biên dịch. **Khôi phục từ
+file** đọc thử file, cho xem số câu / đề / lượt luyện bên trong, rồi mới thay toàn bộ dữ liệu hiện có; trước khi ghi đè máy
+chủ tự lưu một bản dữ liệu hiện tại (`truoc-khoi-phuc-*.zip`). Khôi phục chạy trong một giao dịch: file hỏng hay lỗi giữa
+chừng thì dữ liệu cũ còn nguyên. File sao lưu dùng được giữa PostgreSQL và SQLite, và giữa các máy.
+
+Các bản lưu trên máy chủ nằm trong thư mục `./backups` cạnh `docker-compose.yml` (trên ổ máy thật, không nằm trong Docker).
+Nút **Xuất câu hỏi ra .tex** cho file định dạng soạn, đọc được bằng mắt và import lại ở trang Import (chỉ gồm câu hỏi).
+
+Dòng lệnh:
+
+```bash
+docker compose exec -T app nhd backup                    # lưu vào ./backups/nhd-saoluu-<ngày giờ>.zip
+docker compose exec -T app nhd backup --giu 14 --khong-pdf   # chỉ giữ 14 bản gần nhất, không kèm PDF
+docker compose exec -T app nhd restore /app/backups/nhd-saoluu-20261027-020000.zip
+```
+
+Sao lưu định kỳ: hẹn giờ chạy lệnh trên bằng công cụ của máy (máy chủ phải đang chạy).
+
+- macOS / Linux: `crontab -e`, thêm dòng (2 giờ sáng hằng ngày, sửa đường dẫn thư mục):
+  `0 2 * * * cd /đường/dẫn/ngan-hang-de && docker compose exec -T app nhd backup --giu 14`
+- Windows: Task Scheduler → Create Basic Task → Daily → Start a program `docker`, arguments
+  `compose exec -T app nhd backup --giu 14`, Start in: thư mục `ngan-hang-de`.
+
+Nên cho thư mục `backups` đồng bộ lên Google Drive / OneDrive (hoặc chép ra ổ ngoài) để còn dữ liệu khi hỏng máy.
 
 ## Giao diện web
 
