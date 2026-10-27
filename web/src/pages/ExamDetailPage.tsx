@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, levelLabel, type ExamDetail, type ExamFile } from "../api";
 import QuestionView from "../components/QuestionView";
 import { buildSummary } from "./ExamListPage";
+import { useAuth } from "../auth";
 
 const STATUS_LABEL = { pending: "Đang chờ", running: "Đang biên dịch", done: "Xong", failed: "Lỗi" };
 
@@ -34,6 +35,7 @@ export default function ExamDetailPage() {
   const [error, setError] = useState("");
   const [variant, setVariant] = useState(0);
   const [showAnswers, setShowAnswers] = useState(false);
+  const { me } = useAuth();
 
   const load = useCallback(() => {
     api
@@ -81,10 +83,24 @@ export default function ExamDetailPage() {
           Ghép đề theo khung này
         </Link>
         <button onClick={() => api.rebuildExam(exam.id).then(setExam)}>Biên dịch lại</button>
-        <button className="danger" onClick={remove}>
-          Xoá đề
-        </button>
+        {me.role === "admin" && (
+          <button className="danger" onClick={remove}>
+            Xoá đề
+          </button>
+        )}
       </div>
+      <label className="inline publish-toggle">
+        <input
+          type="checkbox"
+          checked={exam.published}
+          onChange={(e) => api.publishExam(exam.id, e.target.checked).then((r) => setExam({ ...exam, published: r.published }))}
+        />{" "}
+        <b>Mở cho học viên</b>
+        <span className="muted">
+          {" "}
+          · học viên thấy đề này ở trang Luyện đề, làm bài và tải file đề; đáp án, lời giải cần xin admin
+        </span>
+      </label>
       <div className="muted">
         {exam.date && <>Ngày {exam.date} · </>}
         {exam.duration && <>{exam.duration} phút · </>}

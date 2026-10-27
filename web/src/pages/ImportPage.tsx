@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, LEVELS, levelLabel, typeLabel, type ImportPreviewItem, type Level, type Status } from "../api";
 import QuestionView from "../components/QuestionView";
+import { useAuth } from "../auth";
 
 const STATE_LABEL = { new: "Mới", duplicate: "Trùng", error: "Lỗi" };
 
@@ -12,7 +13,9 @@ export default function ImportPage() {
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [extraTag, setExtraTag] = useState("");
   const [defaultLevel, setDefaultLevel] = useState<Level | "">("");
-  const [status, setStatus] = useState<Status>("approved");
+  const { me } = useAuth();
+  const admin = me.role === "admin";
+  const [status, setStatus] = useState<Status>(admin ? "approved" : "draft");
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ added: string[]; duplicates: number; failed: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -119,10 +122,14 @@ export default function ImportPage() {
                 </option>
               ))}
             </select>
-            <select value={status} onChange={(e) => setStatus(e.target.value as Status)}>
-              <option value="approved">Lưu là đã duyệt</option>
-              <option value="draft">Lưu là nháp</option>
-            </select>
+            {admin ? (
+              <select value={status} onChange={(e) => setStatus(e.target.value as Status)}>
+                <option value="approved">Lưu là đã duyệt</option>
+                <option value="draft">Lưu là nháp</option>
+              </select>
+            ) : (
+              <span className="muted small">Lưu là nháp, chờ admin duyệt</span>
+            )}
             <button className="primary" disabled={chosen.size === 0 || busy} onClick={commit}>
               Lưu {chosen.size} câu
             </button>

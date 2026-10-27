@@ -15,6 +15,7 @@ import {
   type TagNode,
 } from "../api";
 import { TagSelect } from "../components/TagTree";
+import { useAuth } from "../auth";
 import Tex from "../components/Tex";
 
 const SECTION_NAMES: Record<QType, string> = {
@@ -50,6 +51,7 @@ const toSections = (sections: { name?: string; type: QType; points?: number; pic
 const FILE_KIND = "nhd-khung-de";
 
 export default function ExamNewPage() {
+  const { me } = useAuth();
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(today());
@@ -300,7 +302,7 @@ export default function ExamNewPage() {
               }}
             />
           </label>
-          {current && (
+          {current && me.role === "admin" && (
             <button className="link danger" onClick={removeTpl}>
               Xoá khung
             </button>

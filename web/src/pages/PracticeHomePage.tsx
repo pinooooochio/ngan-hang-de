@@ -13,11 +13,17 @@ import {
   type TagNode,
 } from "../api";
 import { TagSelect } from "../components/TagTree";
+import { isStaff, useAuth } from "../auth";
 
 const fmt = (x: number | null) => (x === null ? "" : String(Math.round(x * 100) / 100).replace(".", ","));
 
+const FILE_LABEL = { de: "Đề", loigiai: "Lời giải", dapan: "Đáp án" };
+
 export default function PracticeHomePage() {
   const navigate = useNavigate();
+  const { me } = useAuth();
+  const staff = isStaff(me.role);
+  const showQuick = staff || me.settings.student_quick;
   const [tags, setTags] = useState<TagNode[]>([]);
   const [exams, setExams] = useState<ExamSummary[]>([]);
   const [doing, setDoing] = useState<AttemptSummary[]>([]);
@@ -27,7 +33,7 @@ export default function PracticeHomePage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.tags().then(setTags);
+    if (showQuick) api.tags().then(setTags);
     api.listExams().then(setExams);
     api.listAttempts().then((all) => setDoing(all.filter((a) => !a.submitted_at)));
   }, []);
@@ -69,7 +75,8 @@ export default function PracticeHomePage() {
         </div>
       )}
 
-      <div className="practice-cols">
+      <div className={showQuick ? "practice-cols" : ""}>
+        {showQuick && (
         <section className="section-card">
           <h3>Luyện nhanh từ ngân hàng</h3>
           <div className="quick-grid">
@@ -114,26 +121,33 @@ export default function PracticeHomePage() {
           </button>
           <p className="hint">Chỉ lấy câu đã duyệt. Câu được chọn ngẫu nhiên và đảo đáp án mỗi lần.</p>
         </section>
+        )}
 
         <section className="section-card">
-          <h3>Làm đề trong kho</h3>
+          <h3>{staff ? "Làm đề trong kho" : "Đề được mở"}</h3>
           <label className="inline">
             <input type="checkbox" checked={timed} onChange={(e) => setTimed(e.target.checked)} /> Tính giờ theo thời gian của đề
           </label>
           {exams.length === 0 ? (
-            <div className="muted">
-              Kho đề còn trống. <Link to="/de/moi">Ghép đề</Link>.
-            </div>
+            staff ? (
+              <div className="muted">
+                Kho đề còn trống. <Link to="/de/moi">Ghép đề</Link>.
+              </div>
+            ) : (
+              <div className="muted">Chưa có đề nào được mở. Khi admin mở đề, đề sẽ hiện ở đây.</div>
+            )
           ) : (
             <table className="table">
               <tbody>
                 {exams.map((e) => (
                   <tr key={e.id}>
                     <td>
-                      <Link to={`/de/${e.id}`}>{e.title}</Link>
+                      {staff ? <Link to={`/de/${e.id}`}>{e.title}</Link> : <b>{e.title}</b>}
+                      {staff && !e.published && <span className="badge draft">Chưa mở cho học viên</span>}
                       <div className="muted small">
                         {e.n_questions} câu{e.duration ? ` · ${e.duration} phút` : ""} · {e.n_variants} mã đề
                       </div>
+                      {!staff && <StudentFiles exam={e} onChange={(x) => setExams(exams.map((y) => (y.id === x.id ? x : y)))} />}
                     </td>
                     <td className="right">
                       <button disabled={busy} onClick={() => start({ exam_id: e.id, timed })}>
@@ -153,17 +167,53 @@ export default function PracticeHomePage() {
   );
 }
 
+/** File học viên tải được (đề; đáp án, lời giải khi admin đã đồng ý) và nút xin tải đáp án. */
+function StudentFiles({ exam, onChange }: { exam: ExamSummary; onChange: (e: ExamSummary) => void }) {
+  const [error, setError] = useState("");
+  const files = (exam.files ?? []).filter((f) => f.url);
+  const req = exam.request;
+  const ask = async () => {
+    setError("");
+    try {
+      onChange(await api.requestAnswers(exam.id));
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+  return (
+    <div className="student-files small">
+      {files.map((f) => (
+        <a key={f.name} href={f.url!} target="_blank" rel="noreferrer">
+          {FILE_LABEL[f.kind]}
+          {f.variant_code ? ` ${f.variant_code}` : ""}
+        </a>
+      ))}
+      {req?.status === "approved" ? null : req?.status === "pending" ? (
+        <span className="muted">Đã xin tải đáp án, chờ admin</span>
+      ) : (
+        <button className="link small" onClick={ask}>
+          {req?.status === "rejected" ? `Xin lại đáp án${req.note ? ` (bị từ chối: ${req.note})` : ""}` : "Xin tải đáp án và lời giải"}
+        </button>
+      )}
+      {error && <span className="bad">{error}</span>}
+    </div>
+  );
+}
+
 /** Lịch sử các lượt luyện và thống kê theo chủ đề, mức độ. */
 export function PracticeResultsPage() {
+  const { me } = useAuth();
   const [attempts, setAttempts] = useState<AttemptSummary[] | null>(null);
   const [stats, setStats] = useState<PracticeStats | null>(null);
+  const [everyone, setEveryone] = useState(false);
 
   const reload = () => {
-    api.listAttempts().then(setAttempts);
+    api.listAttempts(undefined, everyone).then(setAttempts);
     api.attemptStats().then(setStats);
   };
 
-  useEffect(reload, []);
+  useEffect(reload, [everyone]);
+  const canDelete = (a: AttemptSummary) => me.role === "admin" || (me.role === "editor" && a.user_id === me.id);
 
   const remove = async (a: AttemptSummary) => {
     if (!window.confirm(`Xoá lượt luyện "${a.title}"?`)) return;
@@ -181,12 +231,20 @@ export function PracticeResultsPage() {
         stats && <StatsView stats={stats} />
       )}
 
-      <h3>Lịch sử luyện</h3>
+      <div className="editor-head">
+        <h3>Lịch sử luyện</h3>
+        {me.role === "admin" && (
+          <label className="inline">
+            <input type="checkbox" checked={everyone} onChange={(e) => setEveryone(e.target.checked)} /> Xem bài của mọi người
+          </label>
+        )}
+      </div>
       {attempts && attempts.length === 0 && <div className="muted">Chưa có lượt luyện nào.</div>}
       {attempts && attempts.length > 0 && (
         <table className="table">
           <thead>
             <tr>
+              {everyone && <th>Người làm</th>}
               <th>Đề</th>
               <th>Mã đề</th>
               <th>Bắt đầu</th>
@@ -197,6 +255,7 @@ export function PracticeResultsPage() {
           <tbody>
             {attempts.map((a) => (
               <tr key={a.id}>
+                {everyone && <td>{a.user_name ?? <span className="muted">(không rõ)</span>}</td>}
                 <td>
                   <Link to={`/luyen/${a.id}`}>{a.title}</Link>
                   <div className="muted small">{a.n_questions} câu</div>
@@ -216,9 +275,11 @@ export function PracticeResultsPage() {
                   )}
                 </td>
                 <td className="right">
-                  <button className="link danger" onClick={() => remove(a)}>
-                    Xoá
-                  </button>
+                  {canDelete(a) && (
+                    <button className="link danger" onClick={() => remove(a)}>
+                      Xoá
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

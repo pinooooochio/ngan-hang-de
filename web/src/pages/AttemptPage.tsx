@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, levelLabel, type Answer, type AttemptDetail, type AttemptQuestion, type AttemptResult } from "../api";
 import Tex from "../components/Tex";
+import { isStaff, useAuth } from "../auth";
 
 const fmtScore = (x: number | null) => (x === null ? "" : String(Math.round(x * 100) / 100).replace(".", ","));
 
@@ -17,6 +18,7 @@ const answered = (a: Answer | undefined) =>
   a !== undefined && a !== null && (Array.isArray(a) ? a.some((x) => x !== null) : a !== "");
 
 export default function AttemptPage() {
+  const { me } = useAuth();
   const { id } = useParams();
   const attemptId = Number(id);
   const [attempt, setAttempt] = useState<AttemptDetail | null>(null);
@@ -31,6 +33,8 @@ export default function AttemptPage() {
 
   if (error) return <div className="alert error">{error}</div>;
   if (!attempt) return <div className="muted">Đang tải…</div>;
+  if (!attempt.submitted_at && attempt.user_id !== me.id)
+    return <div className="alert">Lượt này của người khác và chưa nộp bài, chỉ xem được sau khi nộp.</div>;
   return attempt.submitted_at ? <Review attempt={attempt} /> : <Doing attempt={attempt} onSubmitted={setAttempt} />;
 }
 
@@ -231,6 +235,8 @@ function AnswerQuestion({ q, value, onChange }: { q: AttemptQuestion; value: Ans
 
 /** Xem kết quả sau khi nộp: điểm, đáp án đã chọn so với đáp án đúng, lời giải. */
 function Review({ attempt }: { attempt: AttemptDetail }) {
+  const { me } = useAuth();
+  const canRetry = attempt.user_id === me.id && (isStaff(me.role) || me.settings.student_quick);
   const navigate = useNavigate();
   const [onlyWrong, setOnlyWrong] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -269,12 +275,13 @@ function Review({ attempt }: { attempt: AttemptDetail }) {
           <label className="inline">
             <input type="checkbox" checked={onlyWrong} onChange={(e) => setOnlyWrong(e.target.checked)} /> Chỉ xem câu chưa đúng
           </label>
-          {nWrong > 0 && (
+          {nWrong > 0 && canRetry && (
             <button className="primary" disabled={busy} onClick={retry}>
               Luyện lại {nWrong} câu chưa đúng
             </button>
           )}
-          {attempt.exam_id && <Link to={`/de/${attempt.exam_id}`}>Xem đề gốc</Link>}
+          {attempt.exam_id && isStaff(me.role) && <Link to={`/de/${attempt.exam_id}`}>Xem đề gốc</Link>}
+          {attempt.user_id !== me.id && attempt.user_name && <span className="muted">Bài của {attempt.user_name}</span>}
         </div>
       </div>
 

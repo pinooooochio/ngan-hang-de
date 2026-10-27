@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from helpers import login_admin
 from nganhangde.api import create_app
 from nganhangde.compile import latex_available
 
@@ -21,6 +22,7 @@ ONE = r"""% @tags: Lớp 10 / Lượng giác ; @level: NB ; @id: LG-1
 def client(db_url):
     app = create_app(db_url)
     with TestClient(app) as c:
+        login_admin(c)
         yield c
     app.state.engine.dispose()
 

@@ -225,11 +225,13 @@ def is_late(attempt: Attempt) -> bool:
 # ---------- Thống kê ----------
 
 
-def stats(session: Session, depth: int = 2) -> dict:
-    """Tỉ lệ điểm theo mức độ và theo thẻ (đến độ sâu `depth`: lớp, chủ đề) trên các lượt đã nộp."""
-    items = session.scalars(
-        select(AttemptItem).join(Attempt).where(Attempt.submitted_at.is_not(None), AttemptItem.max_points > 0)
-    ).all()
+def stats(session: Session, depth: int = 2, user_id: int | None = None) -> dict:
+    """Tỉ lệ điểm theo mức độ và theo thẻ (đến độ sâu `depth`: lớp, chủ đề) trên các lượt đã nộp
+    (của một người nếu có `user_id`)."""
+    stmt = select(AttemptItem).join(Attempt).where(Attempt.submitted_at.is_not(None), AttemptItem.max_points > 0)
+    if user_id is not None:
+        stmt = stmt.where(Attempt.user_id == user_id)
+    items = session.scalars(stmt).all()
 
     def bucket():
         return {"n": 0, "right": 0, "points": 0.0, "max_points": 0.0}

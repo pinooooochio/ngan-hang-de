@@ -42,7 +42,20 @@ TABLE_NAMES = {
     "attempts": "Lượt luyện",
     "attempt_items": "Câu trong lượt luyện",
     "generation_batches": "Lần sinh AI",
+    "users": "Tài khoản",
+    "question_logs": "Nhật ký sửa câu",
+    "answer_requests": "Yêu cầu tải đáp án",
+    "settings": "Cài đặt",
 }
+
+# Phiên đăng nhập không sao lưu: khôi phục xong mọi người đăng nhập lại
+SKIP_TABLES = {"user_sessions"}
+# Bản sao lưu cũ (chưa có tài khoản) thì giữ tài khoản hiện tại để không tự khoá mình ngoài
+KEEP_IF_ABSENT = {"users", "user_sessions"}
+
+
+def tables() -> list:
+    return [t for t in Base.metadata.sorted_tables if t.name not in SKIP_TABLES]
 
 
 class BackupError(Exception):
@@ -89,7 +102,7 @@ def _load_value(column, v):
 
 def table_counts(engine: Engine) -> dict[str, int]:
     with engine.connect() as conn:
-        return {t.name: conn.scalar(select(func.count()).select_from(t)) for t in Base.metadata.sorted_tables}
+        return {t.name: conn.scalar(select(func.count()).select_from(t)) for t in tables()}
 
 
 def _iter_files(root: Path):
@@ -122,7 +135,7 @@ def write_backup(engine: Engine, out: IO[bytes] | Path, include_files: bool = Tr
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         # Đọc mọi bảng trong cùng một giao dịch để bản sao lưu nhất quán
         with engine.connect() as conn:
-            for table in Base.metadata.sorted_tables:
+            for table in tables():
                 order = list(table.primary_key.columns)
                 buf = io.StringIO()
                 n = 0
@@ -212,7 +225,7 @@ def read_archive(z: zipfile.ZipFile) -> Archive:
     if int(manifest.get("version", 0)) > FORMAT_VERSION:
         raise BackupError("file sao lưu do bản mới hơn tạo ra, hãy cập nhật ứng dụng trước khi khôi phục")
 
-    known = {t.name: t for t in Base.metadata.sorted_tables}
+    known = {t.name: t for t in tables()}
     archive = Archive(manifest, {}, [])
     for name in sorted(names):
         if name.startswith("data/") and name.endswith(".jsonl"):
@@ -290,7 +303,8 @@ def restore(engine: Engine, src: bytes | Path, safety_backup: bool = True) -> di
     z, archive = open_archive(src)
     with z:
         safety = None
-        if safety_backup and any(table_counts(engine).values()):
+        # CSDL mới chỉ có tài khoản (vừa tạo admin để đăng nhập) thì không cần bản an toàn
+        if safety_backup and any(n for t, n in table_counts(engine).items() if t not in ("users", "settings")):
             safety = save_backup(engine, include_files=True, prefix=SAFETY_PREFIX).name
 
         # Đường dẫn PDF lưu trong bảng builds là đường dẫn tuyệt đối lúc sao lưu: đổi sang thư mục file hiện tại
@@ -302,11 +316,13 @@ def restore(engine: Engine, src: bytes | Path, safety_backup: bool = True) -> di
                 if p and p.startswith(old_root.rstrip("/") + "/"):
                     row["pdf_path"] = str(root / p[len(old_root.rstrip("/")) + 1 :])
 
-        tables = Base.metadata.sorted_tables
+        all_tables = Base.metadata.sorted_tables
+        keep = KEEP_IF_ABSENT if "users" not in archive.manifest.get("tables", {}) else set()
         with engine.begin() as conn:
-            for table in reversed(tables):
-                conn.execute(table.delete())
-            for table in tables:
+            for table in reversed(all_tables):
+                if table.name not in keep:
+                    conn.execute(table.delete())
+            for table in all_tables:
                 rows = archive.rows.get(table.name)
                 if not rows:
                     continue
