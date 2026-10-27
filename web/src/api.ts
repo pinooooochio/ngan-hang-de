@@ -444,6 +444,11 @@ export const api = {
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") qs.set(k, String(v));
     return request<{ total: number; items: QuestionSummary[] }>("GET", `/api/questions?${qs}`);
   },
+  questionCodes: (params: Record<string, string | number | undefined>) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") qs.set(k, String(v));
+    return request<string[]>("GET", `/api/questions/codes?${qs}`);
+  },
   getQuestion: (code: string) => request<Question>("GET", `/api/questions/${encodeURIComponent(code)}`),
   createQuestion: (source: string, status?: Status) => request<Question>("POST", "/api/questions", { source, status }),
   updateQuestion: (code: string, source: string, status?: Status) =>

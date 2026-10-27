@@ -298,3 +298,12 @@ def test_old_database_gets_new_columns(tmp_path):
     with app.state.engine.connect() as conn:
         assert conn.execute(text("SELECT published FROM exams")).scalar() in (0, False)
     app.state.engine.dispose()
+
+
+def test_select_all_codes(admin):
+    """Chọn tất cả câu khớp bộ lọc (mọi trang) rồi duyệt một lần."""
+    codes = admin.get("/api/questions/codes?tag=lop-12").json()
+    assert len(codes) == 15 and codes == sorted(codes)
+    assert len(admin.get("/api/questions/codes?q=12V-01").json()) == 6
+    assert admin.post("/api/questions/bulk", json={"codes": codes, "status": "draft"}).json()["updated"] == 15
+    assert admin.get("/api/questions/codes?status=draft").json() == codes

@@ -1371,3 +1371,9 @@ label.button:hover {
     display: none;
   }
 }
+
+.select-links {
+  margin-left: 12px;
+  display: inline-flex;
+  gap: 4px;
+}

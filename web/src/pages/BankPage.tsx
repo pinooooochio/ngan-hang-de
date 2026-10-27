@@ -36,16 +36,28 @@ export default function BankPage() {
     setParams(next);
   };
 
+  const query = {
+    tag: filters.tag,
+    level: filters.level,
+    type: filters.type,
+    status: filters.status,
+    q: filters.q,
+    source: filters.source,
+  };
+
+  const selectAll = async () => {
+    try {
+      setSelected(new Set(await api.questionCodes(query)));
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
   const load = useCallback(async () => {
     try {
       const [list, tagList, stats] = await Promise.all([
         api.listQuestions({
-          tag: filters.tag,
-          level: filters.level,
-          type: filters.type,
-          status: filters.status,
-          q: filters.q,
-          source: filters.source,
+          ...query,
           limit: PAGE,
           offset: filters.page * PAGE,
         }),
@@ -146,6 +158,22 @@ export default function BankPage() {
           </div>
         )}
 
+        {selected.size > 0 && selected.size < total && items.every((q) => selected.has(q.code)) && total > items.length && (
+          <div className="alert">
+            Đã chọn {selected.size} câu trên trang này.{" "}
+            <button className="link" onClick={selectAll}>
+              Chọn tất cả {total} câu đang lọc
+            </button>
+          </div>
+        )}
+        {selected.size > 0 && selected.size === total && total > items.length && (
+          <div className="alert">
+            Đã chọn tất cả {total} câu đang lọc (mọi trang).{" "}
+            <button className="link" onClick={() => setSelected(new Set())}>
+              Bỏ chọn
+            </button>
+          </div>
+        )}
         {selected.size > 0 && (
           <BulkBar admin={me.role === "admin"} count={selected.size} tags={tags} onApply={bulk} onDelete={remove} onClear={() => setSelected(new Set())} />
         )}
@@ -160,6 +188,18 @@ export default function BankPage() {
             />
           )}{" "}
           {total} câu{filters.tag && <> trong thẻ <code>{filters.tag}</code></>}
+          {items.length > 0 && (
+            <span className="select-links">
+              <button className="link small" onClick={() => setSelected(new Set(items.map((q) => q.code)))}>
+                Chọn trang này
+              </button>
+              {total > items.length && (
+                <button className="link small" onClick={selectAll}>
+                  Chọn tất cả {total} câu
+                </button>
+              )}
+            </span>
+          )}
           {filters.source && (
             <span className="tag">
               Nguồn: {filters.source}{" "}

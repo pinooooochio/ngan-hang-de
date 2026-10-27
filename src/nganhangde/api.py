@@ -629,6 +629,20 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         rows = session.scalars(stmt.order_by(Question.updated_at.desc(), Question.id.desc()).limit(limit).offset(offset))
         return {"total": total, "items": [question_json(r, full=False) for r in rows]}
 
+    @app.get("/api/questions/codes", dependencies=[STAFF])
+    def question_codes(
+        tag: str | None = None,
+        level: Level | None = None,
+        type: QuestionType | None = None,
+        status: Status | None = None,
+        q: str | None = None,
+        source: str | None = None,
+        session: Session = S,
+    ):
+        """Mã mọi câu khớp bộ lọc (không phân trang), để chọn tất cả rồi sửa hàng loạt."""
+        stmt = bank.question_query(tag, level, type, status, q, source)
+        return list(session.scalars(stmt.with_only_columns(Question.code).order_by(Question.code)))
+
     @app.get("/api/questions/{code}", dependencies=[STAFF])
     def get_question(code: str, session: Session = S):
         q = bank.get_question(session, code)
