@@ -14,6 +14,7 @@ import {
   type SectionSpec,
   type TagNode,
 } from "../api";
+import { TagSelect } from "../components/TagTree";
 import Tex from "../components/Tex";
 
 const SECTION_NAMES: Record<QType, string> = {
@@ -363,14 +364,7 @@ export default function ExamNewPage() {
                 return (
                   <tr key={k}>
                     <td>
-                      <select value={r.tag ?? ""} onChange={(e) => updateRow(i, k, { tag: e.target.value || undefined })}>
-                        <option value="">Mọi thẻ</option>
-                        {tags.map((t) => (
-                          <option key={t.path} value={t.path}>
-                            {"  ".repeat(t.depth) + t.name}
-                          </option>
-                        ))}
-                      </select>
+                      <TagSelect tags={tags} value={r.tag ?? ""} placeholder="Mọi thẻ" onChange={(p) => updateRow(i, k, { tag: p || undefined })} />
                     </td>
                     <td>
                       <select value={r.level ?? ""} onChange={(e) => updateRow(i, k, { level: (e.target.value || undefined) as Level | undefined })}>
@@ -481,14 +475,7 @@ function QuestionPicker({
     <div className="picker">
       <div className="picker-head">
         <input placeholder="Tìm theo nội dung hoặc mã câu" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
-        <select value={tag} onChange={(e) => setTag(e.target.value)}>
-          <option value="">Mọi thẻ</option>
-          {tags.map((t) => (
-            <option key={t.path} value={t.path}>
-              {"  ".repeat(t.depth) + t.name}
-            </option>
-          ))}
-        </select>
+        <TagSelect tags={tags} value={tag} placeholder="Mọi thẻ" onChange={setTag} />
         <button className="link" onClick={() => setOpen(false)}>
           Đóng
         </button>

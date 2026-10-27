@@ -103,9 +103,6 @@ export default function BankPage() {
       <aside className="sidebar">
         <h3>Cây thẻ</h3>
         <TagTree tags={tags} selected={filters.tag} total={bankTotal} onSelect={(p) => setFilter("the", p)} />
-        <Link to="/the" className="small">
-          Quản lý thẻ, chuyển khung cũ
-        </Link>
       </aside>
       <section className="content">
         <div className="filters">
