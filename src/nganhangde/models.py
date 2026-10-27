@@ -1,4 +1,4 @@
-"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, đề, khung đề, mã đề và lượt luyện đề."""
+"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, đề, khung đề, mã đề, lượt luyện đề và tài khoản."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -123,6 +124,8 @@ class Exam(Base):
     duration: Mapped[int | None] = mapped_column(Integer)  # phút
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    # học viên chỉ thấy và làm được đề đã mở
+    published: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     items: Mapped[list[ExamItem]] = relationship(
         back_populates="exam", order_by="ExamItem.position", cascade="all, delete-orphan"
@@ -222,6 +225,7 @@ class Attempt(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     exam_id: Mapped[int | None] = mapped_column(ForeignKey("exams.id"), index=True)
     kind: Mapped[str] = mapped_column(String(20))  # exam | quick
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String(300))
     variant_code: Mapped[str | None] = mapped_column(String(20))
     data: Mapped[dict] = mapped_column(JSON)
@@ -281,3 +285,79 @@ class GenerationBatch(Base):
     @property
     def source(self) -> str:
         return f"AI #{self.id}"
+
+
+class Role(str, enum.Enum):
+    ADMIN = "admin"  # toàn quyền
+    EDITOR = "editor"  # soạn đề: soạn, import, ghép đề; không xoá, không duyệt câu, không cài đặt
+    STUDENT = "student"  # học viên: chỉ làm các đề đã mở
+
+
+ROLE_NAMES = {Role.ADMIN: "Admin", Role.EDITOR: "Soạn đề", Role.STUDENT: "Học viên"}
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    display_name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[Role] = mapped_column(Enum(Role))
+    password_hash: Mapped[str] = mapped_column(String(300))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    last_login: Mapped[datetime | None] = mapped_column(DateTime)
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class UserSession(Base):
+    """Phiên đăng nhập; cookie giữ mã ngẫu nhiên, bảng chỉ lưu băm của mã. Không đưa vào sao lưu."""
+
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class QuestionLog(Base):
+    """Nhật ký thay đổi câu hỏi: ai làm gì, lúc nào, kèm nội dung câu trước khi sửa.
+    Giữ theo mã câu (không khoá ngoại) để vẫn còn sau khi xoá câu hay xoá tài khoản."""
+
+    __tablename__ = "question_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    username: Mapped[str | None] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(20))  # tao | sua | duyet | bo-duyet | xoa | import | hang-loat | the
+    detail: Mapped[str | None] = mapped_column(String(500))
+    before: Mapped[str | None] = mapped_column(Text)  # câu ở định dạng soạn trước khi sửa
+    at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+
+
+class AnswerRequest(Base):
+    """Học viên xin tải PDF đáp án / lời giải của một đề; admin đồng ý thì tải được."""
+
+    __tablename__ = "answer_requests"
+    __table_args__ = (UniqueConstraint("user_id", "exam_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    exam_id: Mapped[int] = mapped_column(ForeignKey("exams.id"), index=True)
+    status: Mapped[str] = mapped_column(String(10), default="pending")  # pending | approved | rejected
+    note: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    decided_by: Mapped[str | None] = mapped_column(String(64))
+
+
+class Setting(Base):
+    """Cài đặt chung dạng khoá -> giá trị JSON."""
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict | list | str | int | bool | None] = mapped_column(JSON)

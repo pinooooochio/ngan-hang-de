@@ -26,15 +26,43 @@ docker compose exec app nhd build examples/de-vecto.toml    # PDF ra thư mục 
 Để sinh câu hỏi trực tiếp bằng Claude, tạo file `.env` cạnh `docker-compose.yml` với dòng
 `ANTHROPIC_API_KEY=...` rồi chạy lại `docker compose up -d`.
 
-Giao diện web chưa có đăng nhập (giai đoạn này chỉ một người dùng), nên cổng 8000 chỉ mở cho chính máy đó.
+## Đăng nhập và phân quyền
+
+Lần đầu mở web, trang đăng nhập mời tạo **tài khoản admin**. Các tài khoản khác do admin tạo ở menu tài khoản góc phải
+→ **Người dùng và phân quyền** (không có trang tự đăng ký). Ba vai trò:
+
+| | Admin | Soạn đề | Học viên |
+| --- | --- | --- | --- |
+| Xem, soạn, sửa câu; import; sinh câu AI | có | có (câu mới luôn là nháp) | không |
+| Duyệt câu / chuyển về nháp | có | không | không |
+| Xoá câu, quản lý thẻ, xuất .tex | có | không | không |
+| Ghép đề, khung đề, bật "Mở cho học viên" | có | có | không |
+| Xoá đề, xoá khung đề | có | không | không |
+| Làm đề | mọi đề | mọi đề | đề đã mở |
+| Tải PDF | mọi file | mọi file | file đề; đáp án và lời giải khi admin đồng ý yêu cầu |
+| Luyện nhanh từ ngân hàng | có | có | khi admin bật trong **Cài đặt chung** |
+| Xem kết quả | của mọi người | của mình | của mình |
+| Người dùng, yêu cầu tải đáp án, nhật ký sửa câu, sao lưu, cài đặt | có | không | không |
+
+Mọi thay đổi câu hỏi (tạo, sửa kèm bản trước khi sửa, duyệt, xoá, import, sửa hàng loạt) được ghi nhật ký: xem ở trang sửa
+câu hoặc **Nhật ký sửa câu**. Sai mật khẩu 5 lần thì tài khoản phải chờ 15 phút. Quên mật khẩu admin:
+
+```bash
+docker compose exec app nhd user passwd admin     # đặt lại mật khẩu, mở khoá
+docker compose exec app nhd user list
+```
+
+Cơ sở dữ liệu cũ tự được thêm cột mới khi khởi động; lượt luyện có từ trước giao cho admin đầu tiên. Muốn mở cho máy
+khác qua Internet thì đặt sau HTTPS (ví dụ Cloudflare Tunnel) để mật khẩu không đi dạng trần.
 
 ## Sao lưu và khôi phục
 
 Trang **Sao lưu** (`/sao-luu`) có nút **Tải bản sao lưu**: một file `.zip` chứa toàn bộ dữ liệu (câu hỏi kể cả nháp, thẻ,
-khung đề, kho đề cùng mã đề và đáp án, lượt luyện, lịch sử sinh AI) và tuỳ chọn kèm các PDF đã biên dịch. **Khôi phục từ
+khung đề, kho đề cùng mã đề và đáp án, lượt luyện, lịch sử sinh AI, tài khoản, nhật ký sửa câu, cài đặt) và tuỳ chọn kèm các PDF đã biên dịch. **Khôi phục từ
 file** đọc thử file, cho xem số câu / đề / lượt luyện bên trong, rồi mới thay toàn bộ dữ liệu hiện có; trước khi ghi đè máy
 chủ tự lưu một bản dữ liệu hiện tại (`truoc-khoi-phuc-*.zip`). Khôi phục chạy trong một giao dịch: file hỏng hay lỗi giữa
-chừng thì dữ liệu cũ còn nguyên. File sao lưu dùng được giữa PostgreSQL và SQLite, và giữa các máy.
+chừng thì dữ liệu cũ còn nguyên. File sao lưu dùng được giữa PostgreSQL và SQLite, và giữa các máy. Phiên đăng nhập không
+nằm trong bản sao lưu; khôi phục bản cũ chưa có tài khoản thì giữ nguyên tài khoản hiện tại.
 
 Các bản lưu trên máy chủ nằm trong thư mục `./backups` cạnh `docker-compose.yml` (trên ổ máy thật, không nằm trong Docker).
 Nút **Xuất câu hỏi ra .tex** cho file định dạng soạn, đọc được bằng mắt và import lại ở trang Import (chỉ gồm câu hỏi).
@@ -61,7 +89,7 @@ Nên cho thư mục `backups` đồng bộ lên Google Drive / OneDrive (hoặc 
 - **Ngân hàng câu hỏi**: cây thẻ bên trái kèm số câu mỗi nhánh; lọc theo mức độ, loại câu, trạng thái
   (nháp / đã duyệt) và tìm theo nội dung hoặc mã câu. Chọn nhiều câu để gắn thêm thẻ, đổi thẻ (bỏ thẻ cũ),
   đặt mức độ, duyệt hoặc xoá (câu đã nằm trong đề được giữ lại).
-- **Quản lý thẻ** (link dưới cây thẻ, `/the`): chuyển mọi câu của một nhánh thẻ sang thẻ khác, nhánh trống tự xoá.
+- **Quản lý thẻ** (tab trong module Ngân hàng câu hỏi, `/the`): chuyển mọi câu của một nhánh thẻ sang thẻ khác, nhánh trống tự xoá.
   Có sẵn bảng chuyển câu từ khung đại học cũ (`Đại học / Giải tích / ...`) sang khung mới theo các quy tắc
   `[[doi_the]]` trong `chuong-trinh.toml`; câu cũ chỉ chuyển được tới tầng chương, sau đó lọc theo chương trong
   ngân hàng và **Đổi thẻ** sang chủ đề chi tiết.

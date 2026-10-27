@@ -138,6 +138,10 @@ export interface ExamSummary {
   n_variants: number;
   n_questions: number;
   builds: Record<BuildState, number>;
+  published: boolean;
+  /** Chỉ có khi học viên xem: file được tải và yêu cầu tải đáp án. */
+  files?: ExamFile[];
+  request?: { status: RequestStatus; note: string | null } | null;
 }
 
 export interface ExamDetail extends ExamSummary {
@@ -176,6 +180,8 @@ export interface AttemptSummary {
   score: number | null;
   max_score: number | null;
   n_questions: number;
+  user_id: number | null;
+  user_name?: string | null;
 }
 
 export interface AttemptResult {
@@ -340,6 +346,71 @@ export const TYPES: { value: QType; label: string }[] = [
 export const levelLabel = (l: Level | null) => LEVELS.find((x) => x.value === l)?.label ?? "Chưa có mức độ";
 export const typeLabel = (t: QType) => TYPES.find((x) => x.value === t)?.label ?? t;
 
+// ---------- Tài khoản và phân quyền ----------
+
+export type Role = "admin" | "editor" | "student";
+export type RequestStatus = "pending" | "approved" | "rejected";
+
+export const ROLES: { value: Role; label: string }[] = [
+  { value: "admin", label: "Admin" },
+  { value: "editor", label: "Soạn đề" },
+  { value: "student", label: "Học viên" },
+];
+export const roleLabel = (r: Role) => ROLES.find((x) => x.value === r)?.label ?? r;
+
+export interface UserRow {
+  id: number;
+  username: string;
+  display_name: string;
+  role: Role;
+  role_name: string;
+  active: boolean;
+  created_at: string | null;
+  last_login: string | null;
+}
+
+export interface AppSettings {
+  student_quick: boolean;
+}
+
+export interface Me extends UserRow {
+  settings: AppSettings;
+  pending_requests?: number;
+}
+
+export interface LogEntry {
+  id: number;
+  code: string;
+  username: string | null;
+  action: string;
+  action_name: string;
+  detail: string | null;
+  has_before: boolean;
+  at: string;
+}
+
+export interface AnswerRequestRow {
+  id: number;
+  status: RequestStatus;
+  note: string | null;
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  user: { id: number; username: string; display_name: string } | null;
+  exam: { id: number; title: string } | null;
+}
+
+/** Lỗi từ máy chủ, giữ mã HTTP để phân biệt chưa đăng nhập (401) hay không có quyền (403). */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public data: unknown = null,
+  ) {
+    super(message);
+  }
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   // File (ví dụ bản sao lưu .zip) gửi nguyên nội dung, còn lại gửi JSON
   const raw = body instanceof Blob;
@@ -350,13 +421,17 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   });
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
+    let data: unknown = null;
     try {
-      const data = await res.json();
-      if (data.detail) msg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      data = await res.json();
+      const detail = (data as { detail?: unknown }).detail;
+      if (detail) msg = typeof detail === "string" ? detail : JSON.stringify(detail);
     } catch {
       /* giữ thông báo mặc định */
     }
-    throw new Error(msg);
+    // phiên hết hạn hoặc bị đăng xuất: báo cho ứng dụng hiện trang đăng nhập
+    if (res.status === 401 && !url.startsWith("/api/auth/")) window.dispatchEvent(new Event("nhd:unauthorized"));
+    throw new ApiError(msg, res.status, data);
   }
   if (res.status === 204) return undefined as T;
   const type = res.headers.get("content-type") ?? "";
@@ -400,6 +475,34 @@ export const api = {
   previewPdf: (source: string) => request<Blob>("POST", "/api/preview/pdf", { source }),
   availability: (sections: SectionSpec[]) =>
     request<{ sections: { rows: number[]; problems: string[] }[] }>("POST", "/api/exams/availability", { sections }),
+  me: () => request<Me>("GET", "/api/auth/me"),
+  setup: (body: { username: string; password: string; display_name?: string }) =>
+    request<UserRow>("POST", "/api/auth/setup", body),
+  login: (username: string, password: string) => request<UserRow>("POST", "/api/auth/login", { username, password }),
+  logout: () => request<void>("POST", "/api/auth/logout"),
+  changePassword: (old_password: string, new_password: string) =>
+    request<void>("POST", "/api/auth/password", { old_password, new_password }),
+  updateMe: (display_name: string) => request<UserRow>("PUT", "/api/auth/me", { display_name }),
+  listUsers: () => request<UserRow[]>("GET", "/api/users"),
+  createUser: (body: { username: string; password: string; role: Role; display_name?: string }) =>
+    request<UserRow>("POST", "/api/users", body),
+  updateUser: (id: number, body: { display_name?: string; role?: Role; active?: boolean; password?: string }) =>
+    request<UserRow>("PUT", `/api/users/${id}`, body),
+  getSettings: () => request<AppSettings>("GET", "/api/settings"),
+  saveSettings: (body: Partial<AppSettings>) => request<AppSettings>("PUT", "/api/settings", body),
+  questionLog: (code: string) => request<LogEntry[]>("GET", `/api/questions/${encodeURIComponent(code)}/log`),
+  logEntry: (id: number) => request<LogEntry & { before: string | null }>("GET", `/api/question-logs/${id}`),
+  allLogs: (offset = 0, username?: string) =>
+    request<{ total: number; items: LogEntry[] }>(
+      "GET",
+      `/api/question-logs?offset=${offset}${username ? `&username=${encodeURIComponent(username)}` : ""}`,
+    ),
+  publishExam: (id: number, published: boolean) => request<ExamSummary>("PUT", `/api/exams/${id}/published`, { published }),
+  requestAnswers: (id: number) => request<ExamSummary>("POST", `/api/exams/${id}/answer-request`),
+  listRequests: (status?: RequestStatus) =>
+    request<AnswerRequestRow[]>("GET", `/api/answer-requests${status ? `?status=${status}` : ""}`),
+  decideRequest: (id: number, status: "approved" | "rejected", note?: string) =>
+    request<{ id: number; status: RequestStatus }>("PUT", `/api/answer-requests/${id}`, { status, note }),
   listExams: () => request<ExamSummary[]>("GET", "/api/exams"),
   createExam: (spec: ExamSpec) => request<ExamDetail>("POST", "/api/exams", spec),
   getExam: (id: number) => request<ExamDetail>("GET", `/api/exams/${id}`),
@@ -407,7 +510,12 @@ export const api = {
   deleteExam: (id: number) => request<void>("DELETE", `/api/exams/${id}`),
   startAttempt: (body: { exam_id?: number; variant?: string; timed?: boolean; quick?: QuickSpec; retry_of?: number }) =>
     request<AttemptDetail>("POST", "/api/attempts", body),
-  listAttempts: (examId?: number) => request<AttemptSummary[]>("GET", `/api/attempts${examId ? `?exam_id=${examId}` : ""}`),
+  listAttempts: (examId?: number, all = false) => {
+    const qs = new URLSearchParams();
+    if (examId) qs.set("exam_id", String(examId));
+    if (all) qs.set("all", "true");
+    return request<AttemptSummary[]>("GET", `/api/attempts?${qs}`);
+  },
   attemptStats: () => request<PracticeStats>("GET", "/api/attempts/stats"),
   getAttempt: (id: number) => request<AttemptDetail>("GET", `/api/attempts/${id}`),
   saveAnswers: (id: number, answers: Record<string, Answer>) => request<void>("PUT", `/api/attempts/${id}/answers`, { answers }),
@@ -433,7 +541,10 @@ export const api = {
       : request<BackupSummary>("POST", "/api/backup/inspect", src),
   backupRestore: (src: File | string) =>
     typeof src === "string"
-      ? request<BackupSummary & { safety_backup: string | null }>("POST", `/api/backup/restore?name=${encodeURIComponent(src)}`)
-      : request<BackupSummary & { safety_backup: string | null }>("POST", "/api/backup/restore", src),
+      ? request<BackupSummary & { safety_backup: string | null; relogin: boolean }>(
+          "POST",
+          `/api/backup/restore?name=${encodeURIComponent(src)}`,
+        )
+      : request<BackupSummary & { safety_backup: string | null; relogin: boolean }>("POST", "/api/backup/restore", src),
   deleteAttempt: (id: number) => request<void>("DELETE", `/api/attempts/${id}`),
 };

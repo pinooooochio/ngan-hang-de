@@ -52,6 +52,7 @@ export default function ExamListPage() {
               <tr key={e.id}>
                 <td>
                   <Link to={`/de/${e.id}`}>{e.title}</Link>
+                  {e.published && <span className="badge approved">Mở cho học viên</span>}
                 </td>
                 <td>{e.date ?? ""}</td>
                 <td>{e.n_questions}</td>

@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from helpers import login_admin
 from nganhangde import aigen
 from nganhangde.api import create_app
 
@@ -54,6 +55,7 @@ def app(db_url, tmp_path, monkeypatch):
     monkeypatch.setenv("NHD_FILES", str(tmp_path / "files"))
     app = create_app(db_url)
     with TestClient(app) as c:
+        login_admin(c)
         source = (EXAMPLES / "vecto-khong-gian.tex").read_text(encoding="utf-8")
         assert c.post("/api/import/commit", json={"source": source}).status_code == 200
         app.state.client = c

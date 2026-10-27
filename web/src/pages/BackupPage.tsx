@@ -59,7 +59,8 @@ export default function BackupPage() {
       setPending(null);
       return (
         `Đã khôi phục: ${describe(r.tables)}.` +
-        (r.safety_backup ? ` Dữ liệu trước khi khôi phục được lưu thành bản "${r.safety_backup}" bên dưới.` : "")
+        (r.safety_backup ? ` Dữ liệu trước khi khôi phục được lưu thành bản "${r.safety_backup}" bên dưới.` : "") +
+        (r.relogin ? " Trong bản này tài khoản của bạn không còn là admin, hãy đăng nhập lại." : "")
       );
     });
 

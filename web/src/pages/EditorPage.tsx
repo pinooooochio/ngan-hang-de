@@ -3,8 +3,10 @@ import { stex } from "@codemirror/legacy-modes/mode/stex";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, levelLabel, typeLabel, type Parsed, type Question, type Status } from "../api";
+import { api, levelLabel, typeLabel, type LogEntry, type Parsed, type Question, type Status } from "../api";
 import QuestionView from "../components/QuestionView";
+import { useAuth } from "../auth";
+import { LogTable } from "./LogPage";
 
 export default function EditorPage() {
   const { code } = useParams();
@@ -17,6 +19,9 @@ export default function EditorPage() {
   const [busy, setBusy] = useState(false);
   const [pdfUrl, setPdfUrl] = useState("");
   const justSaved = useRef<string | null>(null);
+  const { me } = useAuth();
+  const admin = me.role === "admin";
+  const [log, setLog] = useState<LogEntry[] | null>(null);
   const extensions = useMemo(() => [StreamLanguage.define(stex), EditorView.lineWrapping], []);
 
   // Tải câu hỏi (hoặc mẫu câu mới)
@@ -56,6 +61,11 @@ export default function EditorPage() {
 
   const one = parsed && parsed.length === 1 ? parsed[0] : null;
   const canSave = !!one && one.errors.length === 0 && !busy;
+
+  useEffect(() => {
+    if (code) api.questionLog(code).then(setLog).catch(() => setLog(null));
+    else setLog(null);
+  }, [code, question?.version, question?.status]);
 
   const save = async (status?: Status) => {
     setBusy(true);
@@ -111,16 +121,18 @@ export default function EditorPage() {
           </span>
         )}
         <span className="spacer" />
-        <button disabled={!canSave} onClick={() => save()}>
+        <button className={admin ? "" : "primary"} disabled={!canSave} onClick={() => save()}>
           {code ? "Lưu" : "Lưu nháp"}
         </button>
-        <button className="primary" disabled={!canSave} onClick={() => save("approved")}>
-          Lưu và duyệt
-        </button>
+        {admin && (
+          <button className="primary" disabled={!canSave} onClick={() => save("approved")}>
+            Lưu và duyệt
+          </button>
+        )}
         <button disabled={!one || busy} onClick={previewPdf}>
           Xem PDF
         </button>
-        {code && (
+        {code && admin && (
           <button className="danger" onClick={remove}>
             Xoá
           </button>
@@ -129,6 +141,7 @@ export default function EditorPage() {
 
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert ok">{message}</div>}
+      {!admin && !code && <p className="hint">Câu mới lưu ở dạng nháp, admin duyệt rồi mới dùng để ghép đề.</p>}
 
       <div className="editor-grid">
         <div className="editor-pane">
@@ -174,6 +187,12 @@ export default function EditorPage() {
                 solution={one.solution}
               />
             </>
+          )}
+          {code && log && (
+            <details className="log-box">
+              <summary>Lịch sử thay đổi ({log.length})</summary>
+              <LogTable items={log} />
+            </details>
           )}
           {pdfUrl && (
             <div className="pdf-frame">

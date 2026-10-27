@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from helpers import login_admin
 from nganhangde import backup, builds
 from nganhangde.api import create_app
 from nganhangde.models import Build, BuildStatus
@@ -37,6 +38,7 @@ def client(db_url, tmp_path, monkeypatch):
     monkeypatch.setenv("NHD_BACKUPS", str(tmp_path / "backups"))
     app = create_app(db_url)
     with TestClient(app) as c:
+        login_admin(c)
         source = (EXAMPLES / "vecto-khong-gian.tex").read_text(encoding="utf-8")
         assert c.post("/api/import/commit", json={"source": source}).status_code == 200
         exam = c.post("/api/exams", json=EXAM).json()
@@ -116,6 +118,7 @@ def test_restore_into_other_database_and_files_dir(client, tmp_path, monkeypatch
     monkeypatch.setenv("NHD_FILES", str(tmp_path / "may-moi" / "files"))
     other = create_app(f"sqlite:///{tmp_path / 'may-moi.db'}")
     with TestClient(other) as c:
+        login_admin(c)
         r = c.post("/api/backup/restore", content=data).json()
         assert r["safety_backup"] is None  # CSDL trống thì không cần bản an toàn
         assert backup.table_counts(other.state.engine) == before
@@ -185,6 +188,7 @@ def test_export_questions_tex_reimports(client, tmp_path):
     assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
     other = create_app(f"sqlite:///{tmp_path / 'tex.db'}")
     with TestClient(other) as c:
+        login_admin(c)
         res = c.post("/api/import/commit", json={"source": r.text}).json()
         assert len(res["added"]) == 15 and res["failed"] == 0
     other.state.engine.dispose()

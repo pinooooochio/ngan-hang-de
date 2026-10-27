@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, func, select
@@ -23,10 +23,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import aigen, backup, bank, builds, generator, practice, render
+from . import aigen, auth, backup, bank, builds, generator, practice, render
 from .compile import compile_tex, latex_available
-from .db import get_url
+from .db import get_url, upgrade_schema
 from .models import (
+    ROLE_NAMES,
+    AnswerRequest,
     Attempt,
     Base,
     BuildStatus,
@@ -35,13 +37,33 @@ from .models import (
     GenerationBatch,
     Level,
     Question,
+    QuestionLog,
     QuestionType,
+    Role,
+    Setting,
     Status,
+    User,
 )
 from .parser import ParsedQuestion, parse_text
 from .serialize import NEW_TEMPLATE, question_to_ex
 
 WEB_DIST = Path(__file__).parent / "web"
+COOKIE = "nhd_session"
+
+# Cài đặt chung và giá trị mặc định
+SETTINGS = {
+    "student_quick": False,  # học viên được luyện nhanh từ ngân hàng (chỉ câu đã duyệt)
+}
+
+LOG_ACTIONS = {
+    "tao": "Tạo câu",
+    "sua": "Sửa",
+    "duyet": "Duyệt",
+    "bo-duyet": "Chuyển về nháp",
+    "xoa": "Xoá",
+    "import": "Import",
+    "hang-loat": "Sửa hàng loạt",
+}
 
 
 # ---------- Dữ liệu trả về ----------
@@ -216,6 +238,7 @@ def exam_json(exam: Exam, full: bool = False) -> dict:
         "n_variants": len(exam.variants),
         "n_questions": len(exam.items),
         "builds": counts,
+        "published": bool(exam.published),
     }
     if full:
         data.update(
@@ -265,6 +288,7 @@ def attempt_json(a: Attempt, full: bool = False) -> dict:
         "score": a.score,
         "max_score": a.max_score,
         "n_questions": sum(len(s["questions"]) for s in a.data["sections"]),
+        "user_id": a.user_id,
     }
     if full:
         done = a.submitted_at is not None
@@ -322,6 +346,75 @@ def batch_json(b: GenerationBatch, full: bool = False) -> dict:
     return data
 
 
+class SetupIn(BaseModel):
+    username: str
+    password: str
+    display_name: str | None = None
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class PasswordIn(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class UserIn(BaseModel):
+    username: str
+    password: str
+    role: Role
+    display_name: str | None = None
+
+
+class UserUpdateIn(BaseModel):
+    display_name: str | None = None
+    role: Role | None = None
+    active: bool | None = None
+    password: str | None = None
+
+
+class PublishIn(BaseModel):
+    published: bool
+
+
+class DecisionIn(BaseModel):
+    status: str = Field(pattern="^(approved|rejected)$")
+    note: str | None = None
+
+
+def user_json(u: User) -> dict:
+    return {
+        "id": u.id,
+        "username": u.username,
+        "display_name": u.display_name,
+        "role": u.role.value,
+        "role_name": ROLE_NAMES[u.role],
+        "active": u.active,
+        "created_at": u.created_at.isoformat(timespec="seconds") if u.created_at else None,
+        "last_login": u.last_login.isoformat(timespec="seconds") if u.last_login else None,
+    }
+
+
+def log_json(r: QuestionLog) -> dict:
+    return {
+        "id": r.id,
+        "code": r.code,
+        "username": r.username,
+        "action": r.action,
+        "action_name": LOG_ACTIONS.get(r.action, r.action),
+        "detail": r.detail,
+        "has_before": r.before is not None,
+        "at": r.at.isoformat(timespec="seconds"),
+    }
+
+
+def is_staff(user: User) -> bool:
+    return user.role in (Role.ADMIN, Role.EDITOR)
+
+
 def split_tag(text: str | None) -> list[str] | None:
     if not text:
         return None
@@ -343,6 +436,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     url = db_url or get_url()
     engine = create_engine(url, connect_args={"check_same_thread": False} if url.startswith("sqlite") else {})
     Base.metadata.create_all(engine)
+    upgrade_schema(engine)
     SessionLocal = sessionmaker(engine)
 
     def get_session() -> Iterator[Session]:
@@ -363,7 +457,162 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     app.state.engine = engine
     S = Depends(get_session)
 
-    @app.get("/api/questions")
+    # ---------- Đăng nhập và quyền ----------
+    # Mọi API trừ /api/auth/* cần đăng nhập; quyền theo vai trò kiểm tra ở từng API
+    # (test_auth.py duyệt mọi đường dẫn để chắc không API nào bị bỏ sót).
+
+    def current_user(request: Request, session: Session = S) -> User:
+        user = auth.session_user(session, request.cookies.get(COOKIE))
+        if user is None:
+            raise HTTPException(401, "chưa đăng nhập")
+        return user
+
+    def need(*roles: Role):
+        def dep(user: User = Depends(current_user)) -> User:
+            if user.role not in roles:
+                raise HTTPException(403, "tài khoản của bạn không có quyền này")
+            return user
+
+        return Depends(dep)
+
+    U = Depends(current_user)
+    STAFF = need(Role.ADMIN, Role.EDITOR)
+    ADMIN = need(Role.ADMIN)
+
+    def get_setting(session: Session, key: str):
+        row = session.get(Setting, key)
+        return row.value if row is not None else SETTINGS[key]
+
+    def log(session: Session, user: User | None, codes, action: str, detail: str | None = None,
+            before: str | None = None) -> None:
+        for code in codes:
+            session.add(QuestionLog(code=code, user_id=user.id if user else None,
+                                    username=user.username if user else None, action=action,
+                                    detail=detail, before=before))
+        session.commit()
+
+    def set_cookie(resp: Response, token: str) -> None:
+        resp.set_cookie(COOKIE, token, max_age=auth.SESSION_DAYS * 86400, httponly=True, samesite="lax")
+
+    @app.get("/api/auth/me")
+    def me(request: Request, session: Session = S):
+        user = auth.session_user(session, request.cookies.get(COOKIE))
+        if user is None:
+            return JSONResponse({"detail": "chưa đăng nhập", "setup": not auth.has_users(session)}, status_code=401)
+        data = user_json(user)
+        data["settings"] = {k: get_setting(session, k) for k in SETTINGS}
+        if user.role == Role.ADMIN:
+            data["pending_requests"] = session.scalar(
+                select(func.count(AnswerRequest.id)).where(AnswerRequest.status == "pending")
+            )
+        return data
+
+    @app.post("/api/auth/setup", status_code=201)
+    def setup(body: SetupIn, response: Response, session: Session = S):
+        """Tạo tài khoản admin đầu tiên; chỉ dùng được khi chưa có tài khoản nào."""
+        if auth.has_users(session):
+            raise HTTPException(409, "đã có tài khoản, hãy đăng nhập")
+        try:
+            user = auth.create_user(session, body.username, body.password, Role.ADMIN, body.display_name)
+        except auth.AuthError as e:
+            raise HTTPException(422, str(e))
+        user.last_login = datetime.now()
+        session.commit()
+        set_cookie(response, auth.start_session(session, user))
+        return user_json(user)
+
+    @app.post("/api/auth/login")
+    def login(body: LoginIn, response: Response, session: Session = S):
+        try:
+            user = auth.authenticate(session, body.username, body.password)
+        except auth.AuthError as e:
+            raise HTTPException(401, str(e))
+        set_cookie(response, auth.start_session(session, user))
+        return user_json(user)
+
+    @app.post("/api/auth/logout", status_code=204)
+    def logout(request: Request, response: Response, session: Session = S):
+        auth.end_session(session, request.cookies.get(COOKIE))
+        response.delete_cookie(COOKIE)
+
+    @app.post("/api/auth/password", status_code=204)
+    def change_password(body: PasswordIn, request: Request, user: User = U, session: Session = S):
+        if not auth.verify_password(body.old_password, user.password_hash):
+            raise HTTPException(422, "mật khẩu hiện tại không đúng")
+        try:
+            auth.set_password(session, user, body.new_password)
+        except auth.AuthError as e:
+            raise HTTPException(422, str(e))
+        auth.end_user_sessions(session, user.id, keep=request.cookies.get(COOKIE))
+
+    @app.put("/api/auth/me")
+    def update_me(body: UserUpdateIn, user: User = U, session: Session = S):
+        if body.display_name is not None and body.display_name.strip():
+            user.display_name = body.display_name.strip()
+            session.commit()
+        return user_json(user)
+
+    # ---------- Người dùng (admin) ----------
+
+    @app.get("/api/users", dependencies=[ADMIN])
+    def list_users(session: Session = S):
+        return [user_json(u) for u in session.scalars(select(User).order_by(User.role, User.username))]
+
+    @app.post("/api/users", status_code=201, dependencies=[ADMIN])
+    def create_user(body: UserIn, session: Session = S):
+        try:
+            return user_json(auth.create_user(session, body.username, body.password, body.role, body.display_name))
+        except auth.AuthError as e:
+            raise HTTPException(422, str(e))
+
+    @app.put("/api/users/{user_id}")
+    def update_user(user_id: int, body: UserUpdateIn, me: User = ADMIN, session: Session = S):
+        u = session.get(User, user_id)
+        if u is None:
+            raise HTTPException(404, f"không có tài khoản #{user_id}")
+        demote = (body.role is not None and body.role != Role.ADMIN) or body.active is False
+        if u.role == Role.ADMIN and u.active and demote and auth.active_admins(session) <= 1:
+            raise HTTPException(409, "phải còn ít nhất một admin đang hoạt động")
+        if body.display_name is not None and body.display_name.strip():
+            u.display_name = body.display_name.strip()
+        if body.role is not None:
+            u.role = body.role
+        if body.active is not None:
+            u.active = body.active
+            if body.active:
+                u.failed_logins, u.locked_until = 0, None
+        session.commit()
+        if body.password:
+            try:
+                auth.set_password(session, u, body.password)
+            except auth.AuthError as e:
+                raise HTTPException(422, str(e))
+        if body.active is False or body.password or body.role is not None:
+            # đổi quyền, mật khẩu hay khoá thì người đó phải đăng nhập lại
+            if u.id != me.id:
+                auth.end_user_sessions(session, u.id)
+        return user_json(u)
+
+    # ---------- Cài đặt chung ----------
+
+    @app.get("/api/settings", dependencies=[U])
+    def read_settings(session: Session = S):
+        return {k: get_setting(session, k) for k in SETTINGS}
+
+    @app.put("/api/settings", dependencies=[ADMIN])
+    def write_settings(body: dict[str, Any], session: Session = S):
+        for k, v in body.items():
+            if k not in SETTINGS:
+                raise HTTPException(422, f"không có cài đặt {k}")
+            if type(v) is not type(SETTINGS[k]):
+                raise HTTPException(422, f"giá trị của {k} không hợp lệ")
+            row = session.get(Setting, k) or Setting(key=k)
+            row.value = v
+            session.add(row)
+        session.commit()
+        return {k: get_setting(session, k) for k in SETTINGS}
+
+    @app.get("/api/questions", dependencies=[STAFF])
     def list_questions(
         tag: str | None = None,
         level: Level | None = None,
@@ -380,24 +629,37 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         rows = session.scalars(stmt.order_by(Question.updated_at.desc(), Question.id.desc()).limit(limit).offset(offset))
         return {"total": total, "items": [question_json(r, full=False) for r in rows]}
 
-    @app.get("/api/questions/{code}")
+    @app.get("/api/questions/{code}", dependencies=[STAFF])
     def get_question(code: str, session: Session = S):
         q = bank.get_question(session, code)
         if q is None:
             raise HTTPException(404, f"không có câu {code}")
         return question_json(q)
 
+    def check_status(user: User, status: Status | None) -> None:
+        if status == Status.APPROVED and user.role != Role.ADMIN:
+            raise HTTPException(403, "chỉ admin được duyệt câu hỏi")
+
     @app.post("/api/questions", status_code=201)
-    def create_question(body: SaveIn, session: Session = S):
+    def create_question(body: SaveIn, user: User = STAFF, session: Session = S):
+        check_status(user, body.status)
         pq = parse_one(body.source)
         try:
             q = bank.create_question(session, pq, status=body.status or Status.DRAFT)
         except bank.BankError as e:
             raise HTTPException(422, str(e))
+        log(session, user, [q.code], "tao", "đã duyệt" if q.status == Status.APPROVED else None)
         return question_json(q)
 
     @app.put("/api/questions/{code}")
-    def update_question(code: str, body: SaveIn, session: Session = S):
+    def update_question(code: str, body: SaveIn, user: User = STAFF, session: Session = S):
+        q = bank.get_question(session, code)
+        if q is None:
+            raise HTTPException(404, f"không có câu {code}")
+        old_status = q.status
+        if body.status is not None and body.status != old_status and user.role != Role.ADMIN:
+            raise HTTPException(403, "chỉ admin được duyệt hoặc chuyển câu về nháp")
+        before = question_to_ex(q)
         pq = parse_one(body.source)
         try:
             q = bank.update_question(session, code, pq)
@@ -406,42 +668,85 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
                 session.commit()
         except bank.BankError as e:
             raise HTTPException(422, str(e))
+        after = question_to_ex(q)
+        if after != before:
+            log(session, user, [q.code], "sua", f"đổi mã từ {code}" if q.code != code else None, before)
+        if q.status != old_status:
+            log(session, user, [q.code], "duyet" if q.status == Status.APPROVED else "bo-duyet")
         return question_json(q)
 
+    @app.get("/api/questions/{code}/log", dependencies=[STAFF])
+    def question_log(code: str, session: Session = S):
+        rows = session.scalars(select(QuestionLog).where(QuestionLog.code == code)
+                               .order_by(QuestionLog.at.desc(), QuestionLog.id.desc()))
+        return [log_json(r) for r in rows]
+
+    @app.get("/api/question-logs/{log_id}", dependencies=[STAFF])
+    def question_log_entry(log_id: int, session: Session = S):
+        r = session.get(QuestionLog, log_id)
+        if r is None:
+            raise HTTPException(404, f"không có mục nhật ký #{log_id}")
+        return {**log_json(r), "before": r.before}
+
+    @app.get("/api/question-logs", dependencies=[ADMIN])
+    def question_logs(limit: int = 100, offset: int = 0, username: str | None = None, session: Session = S):
+        stmt = select(QuestionLog)
+        if username:
+            stmt = stmt.where(QuestionLog.username == username)
+        total = session.scalar(select(func.count()).select_from(stmt.subquery()))
+        rows = session.scalars(stmt.order_by(QuestionLog.at.desc(), QuestionLog.id.desc()).limit(limit).offset(offset))
+        return {"total": total, "items": [log_json(r) for r in rows]}
+
     @app.delete("/api/questions/{code}", status_code=204)
-    def delete_question(code: str, session: Session = S):
+    def delete_question(code: str, user: User = ADMIN, session: Session = S):
+        q = bank.get_question(session, code)
+        before = question_to_ex(q) if q is not None else None
+        session.expire_all()  # bank.delete_question xoá gắn thẻ bằng SQL trực tiếp
         try:
             bank.delete_question(session, code)
         except bank.BankError as e:
             raise HTTPException(422, str(e))
+        log(session, user, [code], "xoa", before=before)
 
     @app.post("/api/questions/bulk")
-    def bulk(body: BulkIn, session: Session = S):
+    def bulk(body: BulkIn, user: User = STAFF, session: Session = S):
+        if body.status is not None and user.role != Role.ADMIN:
+            raise HTTPException(403, "chỉ admin được duyệt hoặc chuyển câu về nháp")
         n = bank.bulk_update(session, body.codes, split_tag(body.add_tag), body.level, body.status,
                              split_tag(body.set_tag))
+        parts = [f"thêm thẻ {body.add_tag}" if body.add_tag else None,
+                 f"đặt thẻ {body.set_tag}" if body.set_tag else None,
+                 f"mức độ {body.level.value}" if body.level else None,
+                 ("duyệt" if body.status == Status.APPROVED else "chuyển về nháp") if body.status else None]
+        log(session, user, body.codes, "hang-loat", ", ".join(p for p in parts if p) or None)
         return {"updated": n}
 
     @app.post("/api/questions/bulk-delete")
-    def bulk_delete(body: CodesIn, session: Session = S):
+    def bulk_delete(body: CodesIn, user: User = ADMIN, session: Session = S):
+        befores = {q.code: question_to_ex(q) for q in session.scalars(select(Question).where(Question.code.in_(body.codes)))}
+        session.expire_all()
         n, kept = bank.bulk_delete(session, body.codes)
+        for code, before in befores.items():
+            if code not in kept:
+                log(session, user, [code], "xoa", "xoá hàng loạt", before)
         return {"deleted": n, "kept": kept}
 
-    @app.get("/api/template")
+    @app.get("/api/template", dependencies=[STAFF])
     def template():
         return {"source": NEW_TEMPLATE}
 
-    @app.post("/api/parse")
+    @app.post("/api/parse", dependencies=[STAFF])
     def parse(body: SourceIn):
         return [parsed_json(pq) for pq in parse_text(body.source)]
 
-    @app.get("/api/tags")
+    @app.get("/api/tags", dependencies=[U])
     def tags(session: Session = S):
         return [
             {"path": n.path, "name": n.name, "depth": d, "count": c, "names": bank.tag_names(n)}
             for n, d, c in bank.tag_tree(session, aigen.curriculum_order())
         ]
 
-    @app.post("/api/tags/move")
+    @app.post("/api/tags/move", dependencies=[ADMIN])
     def move_tag(body: MoveTagIn, session: Session = S):
         target = split_tag(body.target)
         if not target:
@@ -452,19 +757,19 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             session.rollback()
             raise HTTPException(422, str(e))
 
-    @app.get("/api/tags/moves")
+    @app.get("/api/tags/moves", dependencies=[ADMIN])
     def tag_moves(session: Session = S):
         """Quy tắc chuyển thẻ từ khung cũ trong khung chương trình, kèm số câu còn ở thẻ nguồn."""
         return [{**r, "count": bank.count_in_tag(session, r["from"])} for r in aigen.load_tag_moves()]
 
-    @app.post("/api/tags/moves/apply")
+    @app.post("/api/tags/moves/apply", dependencies=[ADMIN])
     def apply_tag_moves(session: Session = S):
         moved = 0
         for r in aigen.load_tag_moves():
             moved += bank.move_tag(session, r["from"], split_tag(r["to"]) or [])
         return {"moved": moved}
 
-    @app.get("/api/stats")
+    @app.get("/api/stats", dependencies=[STAFF])
     def stats(session: Session = S):
         by_level = dict(session.execute(select(Question.level, func.count()).group_by(Question.level)).all())
         by_status = dict(session.execute(select(Question.status, func.count()).group_by(Question.status)).all())
@@ -474,7 +779,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             "by_status": {k.value: v for k, v in by_status.items()},
         }
 
-    @app.post("/api/import/preview")
+    @app.post("/api/import/preview", dependencies=[STAFF])
     def import_preview(body: SourceIn, session: Session = S):
         items = bank.preview_import(session, parse_text(body.source))
         return [
@@ -483,19 +788,22 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         ]
 
     @app.post("/api/import/commit")
-    def import_commit(body: ImportIn, session: Session = S):
+    def import_commit(body: ImportIn, user: User = STAFF, session: Session = S):
+        # câu do tài khoản Soạn đề import luôn vào nháp, chờ admin duyệt
+        status = body.status if user.role == Role.ADMIN else Status.DRAFT
         report = bank.import_questions(
             session,
             parse_text(body.source),
             source=body.filename,
-            status=body.status,
+            status=status,
             only=set(body.only) if body.only is not None else None,
             extra_tag=split_tag(body.extra_tag),
             default_level=body.default_level,
         )
+        log(session, user, report.added, "import", body.filename)
         return {"added": report.added, "duplicates": len(report.duplicates), "failed": len(report.failed)}
 
-    @app.post("/api/preview/pdf")
+    @app.post("/api/preview/pdf", dependencies=[STAFF])
     def preview_pdf(body: SourceIn):
         """Biên dịch thử một câu (kèm lời giải) ra PDF để xem đúng như khi in."""
         if not latex_available():
@@ -530,7 +838,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     # ---------- Đề thi ----------
 
-    @app.post("/api/exams/availability")
+    @app.post("/api/exams/availability", dependencies=[STAFF])
     def availability(body: AvailabilityIn, session: Session = S):
         """Số câu đã duyệt hiện có cho từng dòng ma trận, và các mã câu chọn tay không dùng được."""
         out = []
@@ -551,7 +859,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     # ---------- Khung đề ----------
 
-    @app.get("/api/exam-templates")
+    @app.get("/api/exam-templates", dependencies=[STAFF])
     def list_templates(session: Session = S):
         return [template_json(t) for t in session.scalars(select(ExamTemplate).order_by(ExamTemplate.name))]
 
@@ -565,7 +873,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         session.commit()
         return template_json(t)
 
-    @app.post("/api/exam-templates", status_code=201)
+    @app.post("/api/exam-templates", status_code=201, dependencies=[STAFF])
     def create_template(body: TemplateIn, session: Session = S):
         return save_template(session, ExamTemplate(), body)
 
@@ -575,21 +883,46 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             raise HTTPException(404, f"không có khung đề #{template_id}")
         return t
 
-    @app.put("/api/exam-templates/{template_id}")
+    @app.put("/api/exam-templates/{template_id}", dependencies=[STAFF])
     def update_template(template_id: int, body: TemplateIn, session: Session = S):
         return save_template(session, load_template(session, template_id), body)
 
-    @app.delete("/api/exam-templates/{template_id}", status_code=204)
+    @app.delete("/api/exam-templates/{template_id}", status_code=204, dependencies=[ADMIN])
     def delete_template(template_id: int, session: Session = S):
         session.delete(load_template(session, template_id))
         session.commit()
 
-    @app.get("/api/exams")
-    def list_exams(session: Session = S):
-        exams = session.scalars(select(Exam).order_by(Exam.created_at.desc(), Exam.id.desc()))
-        return [exam_json(e) for e in exams]
+    def request_of(session: Session, user: User, exam_id: int) -> AnswerRequest | None:
+        return session.scalar(select(AnswerRequest).where(AnswerRequest.user_id == user.id,
+                                                          AnswerRequest.exam_id == exam_id))
 
-    @app.post("/api/exams", status_code=201)
+    def can_download(session: Session, user: User, exam: Exam, kind: str) -> bool:
+        """Soạn đề và admin tải mọi file; học viên tải file đề của đề đã mở, còn đáp án và lời giải
+        thì cần admin đồng ý yêu cầu."""
+        if is_staff(user):
+            return True
+        if not exam.published:
+            return False
+        if kind == "de":
+            return True
+        r = request_of(session, user, exam.id)
+        return r is not None and r.status == "approved"
+
+    def student_exam_json(session: Session, user: User, exam: Exam) -> dict:
+        data = exam_json(exam)
+        r = request_of(session, user, exam.id)
+        data["request"] = {"status": r.status, "note": r.note} if r else None
+        data["files"] = [build_json(exam.id, b) for b in exam.builds if can_download(session, user, exam, b.kind)]
+        return data
+
+    @app.get("/api/exams")
+    def list_exams(user: User = U, session: Session = S):
+        stmt = select(Exam).order_by(Exam.created_at.desc(), Exam.id.desc())
+        if not is_staff(user):
+            return [student_exam_json(session, user, e) for e in session.scalars(stmt.where(Exam.published.is_(True)))]
+        return [exam_json(e) for e in session.scalars(stmt)]
+
+    @app.post("/api/exams", status_code=201, dependencies=[STAFF])
     def create_exam(body: ExamIn, session: Session = S):
         try:
             exam = generator.build_exam(session, exam_spec(body))
@@ -606,18 +939,76 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         return exam
 
     @app.get("/api/exams/{exam_id}")
-    def get_exam(exam_id: int, session: Session = S):
-        return exam_json(load_exam(session, exam_id), full=True)
+    def get_exam(exam_id: int, user: User = U, session: Session = S):
+        exam = load_exam(session, exam_id)
+        if is_staff(user):
+            return exam_json(exam, full=True)
+        if not exam.published:
+            raise HTTPException(404, f"không có đề #{exam_id}")
+        return student_exam_json(session, user, exam)
 
-    @app.post("/api/exams/{exam_id}/rebuild")
+    @app.put("/api/exams/{exam_id}/published", dependencies=[STAFF])
+    def publish_exam(exam_id: int, body: PublishIn, session: Session = S):
+        exam = load_exam(session, exam_id)
+        exam.published = body.published
+        session.commit()
+        return exam_json(exam)
+
+    @app.post("/api/exams/{exam_id}/answer-request", status_code=201)
+    def request_answers(exam_id: int, user: User = need(Role.STUDENT), session: Session = S):
+        exam = load_exam(session, exam_id)
+        if not exam.published:
+            raise HTTPException(404, f"không có đề #{exam_id}")
+        r = request_of(session, user, exam_id)
+        if r is not None and r.status == "approved":
+            raise HTTPException(409, "yêu cầu đã được đồng ý")
+        r = r or AnswerRequest(user_id=user.id, exam_id=exam_id)
+        r.status, r.note, r.created_at, r.decided_at, r.decided_by = "pending", None, datetime.now(), None, None
+        session.add(r)
+        session.commit()
+        return student_exam_json(session, user, exam)
+
+    @app.get("/api/answer-requests")
+    def list_requests(status: str | None = None, user: User = U, session: Session = S):
+        stmt = select(AnswerRequest).order_by(AnswerRequest.created_at.desc())
+        if user.role != Role.ADMIN:
+            stmt = stmt.where(AnswerRequest.user_id == user.id)
+        if status:
+            stmt = stmt.where(AnswerRequest.status == status)
+        out = []
+        for r in session.scalars(stmt):
+            u, e = session.get(User, r.user_id), session.get(Exam, r.exam_id)
+            out.append({
+                "id": r.id, "status": r.status, "note": r.note,
+                "created_at": r.created_at.isoformat(timespec="seconds"),
+                "decided_at": r.decided_at.isoformat(timespec="seconds") if r.decided_at else None,
+                "decided_by": r.decided_by,
+                "user": {"id": u.id, "username": u.username, "display_name": u.display_name} if u else None,
+                "exam": {"id": e.id, "title": e.title} if e else None,
+            })
+        return out
+
+    @app.put("/api/answer-requests/{request_id}")
+    def decide_request(request_id: int, body: DecisionIn, user: User = ADMIN, session: Session = S):
+        r = session.get(AnswerRequest, request_id)
+        if r is None:
+            raise HTTPException(404, f"không có yêu cầu #{request_id}")
+        r.status, r.note = body.status, (body.note or "").strip() or None
+        r.decided_at, r.decided_by = datetime.now(), user.username
+        session.commit()
+        return {"id": r.id, "status": r.status}
+
+    @app.post("/api/exams/{exam_id}/rebuild", dependencies=[STAFF])
     def rebuild_exam(exam_id: int, session: Session = S):
         exam = load_exam(session, exam_id)
         builds.queue_builds(session, exam)
         return exam_json(exam, full=True)
 
-    @app.delete("/api/exams/{exam_id}", status_code=204)
+    @app.delete("/api/exams/{exam_id}", status_code=204, dependencies=[ADMIN])
     def delete_exam(exam_id: int, session: Session = S):
         exam = load_exam(session, exam_id)
+        for r in session.scalars(select(AnswerRequest).where(AnswerRequest.exam_id == exam_id)):
+            session.delete(r)
         # Lượt luyện giữ bản chụp đề riêng nên vẫn còn sau khi xoá đề
         for a in session.scalars(select(Attempt).where(Attempt.exam_id == exam_id)):
             a.exam_id = None
@@ -631,14 +1022,16 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         return f"{slugify(exam.title)}-{name}.{ext}"
 
     @app.get("/api/exams/{exam_id}/files/{name}.pdf")
-    def download_pdf(exam_id: int, name: str, session: Session = S):
+    def download_pdf(exam_id: int, name: str, user: User = U, session: Session = S):
         exam = load_exam(session, exam_id)
         b = next((b for b in exam.builds if b.name == name and b.status == BuildStatus.DONE), None)
+        if b is not None and not can_download(session, user, exam, b.kind):
+            raise HTTPException(403, "chưa được tải file này")
         if b is None or not b.pdf_path or not Path(b.pdf_path).exists():
             raise HTTPException(404, "file chưa có")
         return FileResponse(b.pdf_path, media_type="application/pdf", filename=download_name(exam, name, "pdf"))
 
-    @app.get("/api/exams/{exam_id}/files.zip")
+    @app.get("/api/exams/{exam_id}/files.zip", dependencies=[STAFF])
     def download_zip(exam_id: int, session: Session = S):
         exam = load_exam(session, exam_id)
         buf = io.BytesIO()
@@ -651,21 +1044,31 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     # ---------- Luyện đề ----------
 
-    def load_attempt(session: Session, attempt_id: int) -> Attempt:
+    def load_attempt(session: Session, attempt_id: int, user: User, write: bool = False) -> Attempt:
+        """Lượt luyện của chính mình; admin xem được lượt của mọi người nhưng không làm thay."""
         a = session.get(Attempt, attempt_id)
-        if a is None:
+        if a is None or (a.user_id != user.id and (write or user.role != Role.ADMIN)):
             raise HTTPException(404, f"không có lượt luyện #{attempt_id}")
         return a
 
+    def check_quick(session: Session, user: User) -> None:
+        if not is_staff(user) and not get_setting(session, "student_quick"):
+            raise HTTPException(403, "luyện nhanh từ ngân hàng chưa mở cho học viên")
+
     @app.post("/api/attempts", status_code=201)
-    def start_attempt(body: AttemptIn, session: Session = S):
+    def start_attempt(body: AttemptIn, user: User = U, session: Session = S):
         try:
             if body.exam_id is not None:
-                a = practice.start_from_exam(session, load_exam(session, body.exam_id), body.variant, body.timed)
+                exam = load_exam(session, body.exam_id)
+                if not is_staff(user) and not exam.published:
+                    raise HTTPException(404, f"không có đề #{body.exam_id}")
+                a = practice.start_from_exam(session, exam, body.variant, body.timed)
             elif body.retry_of is not None:
-                spec = practice.retry_spec(load_attempt(session, body.retry_of))
+                check_quick(session, user)
+                spec = practice.retry_spec(load_attempt(session, body.retry_of, user, write=True))
                 a = practice.start_quick(session, spec)
             elif body.quick is not None:
+                check_quick(session, user)
                 qk = body.quick
                 counts = {"mcq": qk.mcq, "tf": qk.tf, "short": qk.short, "essay": qk.essay}
                 spec = practice.quick_spec(qk.title, qk.tag, qk.level.value if qk.level else None, counts)
@@ -675,33 +1078,47 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         except practice.PracticeError as e:
             session.rollback()
             raise HTTPException(422, str(e))
+        a.user_id = user.id
+        session.commit()
         return attempt_json(a, full=True)
 
     @app.get("/api/attempts")
-    def list_attempts(exam_id: int | None = None, session: Session = S):
+    def list_attempts(exam_id: int | None = None, all: bool = False, user_id: int | None = None,
+                      user: User = U, session: Session = S):
+        """Lượt luyện của mình; admin thêm `all=true` (hoặc `user_id`) để xem của người khác."""
         q = select(Attempt).order_by(Attempt.started_at.desc(), Attempt.id.desc())
+        if user.role == Role.ADMIN and (all or user_id is not None):
+            if user_id is not None:
+                q = q.where(Attempt.user_id == user_id)
+        else:
+            q = q.where(Attempt.user_id == user.id)
         if exam_id is not None:
             q = q.where(Attempt.exam_id == exam_id)
-        return [attempt_json(a) for a in session.scalars(q)]
+        names = {u.id: u.display_name for u in session.scalars(select(User))}
+        return [{**attempt_json(a), "user_name": names.get(a.user_id)} for a in session.scalars(q)]
 
     @app.get("/api/attempts/stats")
-    def attempt_stats(session: Session = S):
-        return practice.stats(session)
+    def attempt_stats(user_id: int | None = None, user: User = U, session: Session = S):
+        if user_id is not None and user_id != user.id and user.role != Role.ADMIN:
+            raise HTTPException(403, "tài khoản của bạn không có quyền này")
+        return practice.stats(session, user_id=user_id if user_id is not None else user.id)
 
     @app.get("/api/attempts/{attempt_id}")
-    def get_attempt(attempt_id: int, session: Session = S):
-        return attempt_json(load_attempt(session, attempt_id), full=True)
+    def get_attempt(attempt_id: int, user: User = U, session: Session = S):
+        a = load_attempt(session, attempt_id, user)
+        owner = session.get(User, a.user_id) if a.user_id else None
+        return {**attempt_json(a, full=True), "user_name": owner.display_name if owner else None}
 
     @app.put("/api/attempts/{attempt_id}/answers", status_code=204)
-    def save_answers(attempt_id: int, body: AnswersIn, session: Session = S):
+    def save_answers(attempt_id: int, body: AnswersIn, user: User = U, session: Session = S):
         try:
-            practice.save_answers(session, load_attempt(session, attempt_id), body.answers)
+            practice.save_answers(session, load_attempt(session, attempt_id, user, write=True), body.answers)
         except practice.PracticeError as e:
             raise HTTPException(409, str(e))
 
     @app.post("/api/attempts/{attempt_id}/submit")
-    def submit_attempt(attempt_id: int, body: AnswersIn | None = None, session: Session = S):
-        a = load_attempt(session, attempt_id)
+    def submit_attempt(attempt_id: int, body: AnswersIn | None = None, user: User = U, session: Session = S):
+        a = load_attempt(session, attempt_id, user, write=True)
         try:
             practice.submit(session, a, body.answers if body else None)
         except practice.PracticeError as e:
@@ -709,22 +1126,23 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         return attempt_json(a, full=True)
 
     @app.delete("/api/attempts/{attempt_id}", status_code=204)
-    def delete_attempt(attempt_id: int, session: Session = S):
-        session.delete(load_attempt(session, attempt_id))
+    def delete_attempt(attempt_id: int, user: User = STAFF, session: Session = S):
+        # admin xoá được mọi lượt, Soạn đề chỉ lượt của mình, học viên không xoá
+        session.delete(load_attempt(session, attempt_id, user, write=user.role != Role.ADMIN))
         session.commit()
 
     # ---------- Sinh câu hỏi bằng AI ----------
 
-    @app.get("/api/gen/curriculum")
+    @app.get("/api/gen/curriculum", dependencies=[STAFF])
     def gen_curriculum():
         return {"grades": aigen.load_curriculum(), "api": aigen.api_available(), "model": aigen.model_name(),
                 "max_count": aigen.MAX_COUNT}
 
-    @app.get("/api/gen/coverage")
+    @app.get("/api/gen/coverage", dependencies=[STAFF])
     def gen_coverage(grade: str, session: Session = S):
         return aigen.coverage(session, grade)
 
-    @app.post("/api/gen/prompt")
+    @app.post("/api/gen/prompt", dependencies=[STAFF])
     def gen_prompt(body: GenParamsIn, session: Session = S):
         try:
             system, user = aigen.build_prompt(session, body.model_dump(mode="json"))
@@ -732,7 +1150,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             raise HTTPException(422, str(e))
         return {"system": system, "user": user, "combined": aigen.combined_prompt(system, user)}
 
-    @app.post("/api/gen/check")
+    @app.post("/api/gen/check", dependencies=[STAFF])
     def gen_check(body: GenCheckIn, session: Session = S):
         try:
             items = aigen.check_output(session, body.params.model_dump(mode="json"), body.output)
@@ -742,7 +1160,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             it.pop("parsed")
         return items
 
-    @app.post("/api/gen/batches", status_code=201)
+    @app.post("/api/gen/batches", status_code=201, dependencies=[STAFF])
     def gen_create(body: GenBatchIn, session: Session = S):
         try:
             batch = aigen.create_batch(session, body.params.model_dump(mode="json"), body.mode, body.output)
@@ -751,7 +1169,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             raise HTTPException(422, str(e))
         return batch_json(batch, full=True)
 
-    @app.get("/api/gen/batches")
+    @app.get("/api/gen/batches", dependencies=[STAFF])
     def gen_list(session: Session = S):
         rows = session.scalars(select(GenerationBatch).order_by(GenerationBatch.id.desc()).limit(100))
         return [batch_json(b) for b in rows]
@@ -762,11 +1180,11 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             raise HTTPException(404, f"không có lần sinh #{batch_id}")
         return b
 
-    @app.get("/api/gen/batches/{batch_id}")
+    @app.get("/api/gen/batches/{batch_id}", dependencies=[STAFF])
     def gen_get(batch_id: int, session: Session = S):
         return batch_json(load_batch(session, batch_id), full=True)
 
-    @app.post("/api/gen/batches/{batch_id}/retry")
+    @app.post("/api/gen/batches/{batch_id}/retry", dependencies=[STAFF])
     def gen_retry(batch_id: int, session: Session = S):
         b = load_batch(session, batch_id)
         if b.mode != "api" or b.status != BuildStatus.FAILED:
@@ -780,7 +1198,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     def attachment(name: str) -> dict:
         return {"Content-Disposition": f'attachment; filename="{name}"'}
 
-    @app.get("/api/backup/info")
+    @app.get("/api/backup/info", dependencies=[ADMIN])
     def backup_info():
         n_files, size = backup.files_size()
         return {
@@ -794,7 +1212,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             "backups": backup.list_backups(),
         }
 
-    @app.get("/api/backup/download")
+    @app.get("/api/backup/download", dependencies=[ADMIN])
     def backup_download(files: bool = True):
         """Tạo bản sao lưu và tải về ngay (không giữ lại trên máy chủ)."""
         tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
@@ -811,7 +1229,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             background=BackgroundTask(Path(tmp.name).unlink, missing_ok=True),
         )
 
-    @app.post("/api/backup/save", status_code=201)
+    @app.post("/api/backup/save", status_code=201, dependencies=[ADMIN])
     def backup_save(files: bool = True):
         """Lưu một bản sao lưu vào thư mục sao lưu trên máy chủ."""
         return {"name": backup.save_backup(engine, include_files=files).name}
@@ -822,11 +1240,11 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         except backup.BackupError as e:
             raise HTTPException(404, str(e))
 
-    @app.get("/api/backup/stored/{name}")
+    @app.get("/api/backup/stored/{name}", dependencies=[ADMIN])
     def backup_stored(name: str):
         return FileResponse(stored(name), media_type="application/zip", filename=name)
 
-    @app.delete("/api/backup/stored/{name}", status_code=204)
+    @app.delete("/api/backup/stored/{name}", status_code=204, dependencies=[ADMIN])
     def backup_delete(name: str):
         stored(name).unlink()
 
@@ -838,7 +1256,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             raise HTTPException(422, "chưa chọn file sao lưu")
         return body
 
-    @app.post("/api/backup/inspect")
+    @app.post("/api/backup/inspect", dependencies=[ADMIN])
     async def backup_inspect(request: Request, name: str | None = None):
         """Đọc thử file sao lưu (gửi nội dung .zip làm thân yêu cầu, hoặc tên một bản trên máy chủ)."""
         src = await upload_or_stored(request, name)
@@ -854,15 +1272,27 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             raise HTTPException(422, str(e))
 
     @app.post("/api/backup/restore")
-    async def backup_restore(request: Request, name: str | None = None):
+    async def backup_restore(request: Request, response: Response, name: str | None = None,
+                             me: User = ADMIN):
         """Thay toàn bộ dữ liệu bằng file sao lưu; dữ liệu hiện tại được lưu một bản trước."""
         src = await upload_or_stored(request, name)
+        username = me.username
         try:
-            return await run_in_threadpool(backup.restore, engine, src)
+            result = await run_in_threadpool(backup.restore, engine, src)
         except backup.BackupError as e:
             raise HTTPException(422, str(e))
+        with SessionLocal() as session:
+            auth.claim_orphan_attempts(session)
+            session.commit()
+            # bản sao lưu có tài khoản thì mọi phiên cũ mất; giữ đăng nhập cho người vừa khôi phục
+            # nếu tài khoản của họ trong bản đó vẫn là admin
+            user = auth.get_user(session, username)
+            result["relogin"] = user is None or not user.active or user.role != Role.ADMIN
+            if not result["relogin"] and auth.session_user(session, request.cookies.get(COOKIE)) is None:
+                set_cookie(response, auth.start_session(session, user))
+        return result
 
-    @app.get("/api/export/questions.tex")
+    @app.get("/api/export/questions.tex", dependencies=[ADMIN])
     def export_questions(session: Session = S):
         """Toàn bộ câu hỏi theo định dạng soạn, import lại được ở trang Import."""
         rows = session.scalars(select(Question).order_by(Question.code))

@@ -8,9 +8,9 @@ from typing import Optional
 import typer
 from sqlalchemy import select
 
-from . import aigen, backup, bank, builds, compile as tex, generator, render
+from . import aigen, auth, backup, bank, builds, compile as tex, generator, render
 from .db import make_session
-from .models import LEVEL_NAMES, Level, Question, QuestionType, Status
+from .models import LEVEL_NAMES, ROLE_NAMES, Level, Question, QuestionType, Role, Status, User
 from .parser import parse_text, slugify
 
 app = typer.Typer(help="Ngân hàng câu hỏi và sinh đề thi LaTeX.", no_args_is_help=True, add_completion=False)
@@ -255,6 +255,58 @@ def restore_cmd(
     typer.echo("Đã khôi phục.")
     if result["safety_backup"]:
         typer.echo(f"Dữ liệu trước khi khôi phục được lưu ở {backup.backups_dir() / result['safety_backup']}")
+
+
+user_app = typer.Typer(help="Quản lý tài khoản đăng nhập web (dùng khi quên mật khẩu admin).", no_args_is_help=True)
+app.add_typer(user_app, name="user")
+
+
+def _ask_password() -> str:
+    return typer.prompt("Mật khẩu", hide_input=True, confirmation_prompt="Nhập lại mật khẩu")
+
+
+@user_app.command("list")
+def user_list():
+    """Liệt kê tài khoản."""
+    session = make_session()
+    for u in session.scalars(select(User).order_by(User.username)):
+        state = "" if u.active else "  (đã khoá)"
+        typer.echo(f"{u.username:<20} {ROLE_NAMES[u.role]:<10} {u.display_name}{state}")
+
+
+@user_app.command("add")
+def user_add(
+    username: str = typer.Argument(..., help="Tên đăng nhập"),
+    role: Role = typer.Option(Role.ADMIN, "--role", help="admin, editor (Soạn đề), student (Học viên)"),
+    name: Optional[str] = typer.Option(None, "--ten", help="Tên hiển thị"),
+):
+    """Tạo tài khoản."""
+    session = make_session()
+    try:
+        u = auth.create_user(session, username, _ask_password(), role, name)
+    except auth.AuthError as e:
+        typer.secho(f"Lỗi: {e}", fg="red")
+        raise typer.Exit(1)
+    typer.echo(f"Đã tạo {u.username} ({ROLE_NAMES[u.role]}).")
+
+
+@user_app.command("passwd")
+def user_passwd(username: str = typer.Argument(..., help="Tên đăng nhập")):
+    """Đặt lại mật khẩu, mở khoá tài khoản và đăng xuất mọi phiên của tài khoản đó."""
+    session = make_session()
+    u = auth.get_user(session, username)
+    if u is None:
+        typer.secho(f"Không có tài khoản {username}", fg="red")
+        raise typer.Exit(1)
+    try:
+        auth.set_password(session, u, _ask_password())
+    except auth.AuthError as e:
+        typer.secho(f"Lỗi: {e}", fg="red")
+        raise typer.Exit(1)
+    u.active = True
+    session.commit()
+    auth.end_user_sessions(session, u.id)
+    typer.echo(f"Đã đặt lại mật khẩu cho {u.username}.")
 
 
 @app.command("serve")

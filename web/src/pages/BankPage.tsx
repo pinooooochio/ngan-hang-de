@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, LEVELS, levelLabel, TYPES, typeLabel, type Level, type QuestionSummary, type Status, type TagNode } from "../api";
 import TagTree from "../components/TagTree";
+import { useAuth } from "../auth";
 import Tex from "../components/Tex";
 
 const PAGE = 20;
 
 export default function BankPage() {
+  const { me } = useAuth();
   const [params, setParams] = useSearchParams();
   const filters = {
     tag: params.get("the") ?? "",
@@ -145,7 +147,7 @@ export default function BankPage() {
         )}
 
         {selected.size > 0 && (
-          <BulkBar count={selected.size} tags={tags} onApply={bulk} onDelete={remove} onClear={() => setSelected(new Set())} />
+          <BulkBar admin={me.role === "admin"} count={selected.size} tags={tags} onApply={bulk} onDelete={remove} onClear={() => setSelected(new Set())} />
         )}
 
         <div className="result-count">
@@ -221,7 +223,9 @@ function BulkBar({
   onApply,
   onDelete,
   onClear,
+  admin,
 }: {
+  admin: boolean;
   count: number;
   tags: TagNode[];
   onApply: (body: { add_tag?: string; set_tag?: string; level?: Level; status?: Status }) => void;
@@ -252,11 +256,15 @@ function BulkBar({
           </option>
         ))}
       </select>
-      <button onClick={() => onApply({ status: "approved" })}>Duyệt</button>
-      <button onClick={() => onApply({ status: "draft" })}>Chuyển về nháp</button>
-      <button className="danger" onClick={onDelete}>
-        Xoá
-      </button>
+      {admin && (
+        <>
+          <button onClick={() => onApply({ status: "approved" })}>Duyệt</button>
+          <button onClick={() => onApply({ status: "draft" })}>Chuyển về nháp</button>
+          <button className="danger" onClick={onDelete}>
+            Xoá
+          </button>
+        </>
+      )}
       <button className="link" onClick={onClear}>
         Bỏ chọn
       </button>
