@@ -83,7 +83,40 @@ ten = "Lớp 11"
 
   [[lop.chu_de]]
   ten = "Quan hệ vuông góc trong không gian"
-  dang = ["Hai đường thẳng vuông góc", "Đường thẳng vuông góc với mặt phẳng", "Góc giữa đường thẳng và mặt phẳng", "Hai mặt phẳng vuông góc và góc nhị diện", "Khoảng cách", "Thể tích"]
+  dang = ["Hai đường thẳng vuông góc", "Đường thẳng vuông góc với mặt phẳng", "Hai mặt phẳng vuông góc", "Phép chiếu vuông góc"]
+
+  [[lop.chu_de]]
+  ten = "Góc trong không gian"
+  ghi_chu = "hình học không gian thuần tuý, chưa dùng tọa độ"
+  dang = ["Góc giữa hai đường thẳng", "Góc giữa đường thẳng và mặt phẳng", "Góc giữa hai mặt phẳng"]
+  noi_dung = '''
+- Góc giữa hai đường thẳng: bằng góc giữa hai đường thẳng cùng đi qua một điểm và lần lượt song song với chúng; nằm trong [0°; 90°].
+- Góc giữa đường thẳng d và mặt phẳng (P): góc giữa d và hình chiếu vuông góc d' của d trên (P); d ⊥ (P) thì góc bằng 90°.
+- Góc giữa hai mặt phẳng: góc giữa hai đường thẳng lần lượt vuông góc với hai mặt phẳng, hoặc dựng qua giao tuyến hai đường thẳng cùng vuông góc với giao tuyến; góc nhị diện, số đo góc nhị diện.
+- Hình thường dùng: hình chóp có cạnh bên vuông góc với đáy, hình chóp đều, hình lăng trụ đứng, hình hộp chữ nhật, hình lập phương.
+'''
+
+  [[lop.chu_de]]
+  ten = "Khoảng cách trong không gian"
+  ghi_chu = "hình học không gian thuần tuý, chưa dùng tọa độ"
+  dang = ["Khoảng cách từ điểm đến mặt phẳng", "Khoảng cách giữa đường thẳng và mặt phẳng song song", "Khoảng cách giữa hai mặt phẳng song song", "Khoảng cách giữa hai đường thẳng chéo nhau"]
+  noi_dung = '''
+- Khoảng cách từ điểm M đến mặt phẳng (P): độ dài MH với H là hình chiếu vuông góc của M trên (P); kĩ thuật dựng đường vuông góc qua giao tuyến, đổi điểm theo tỉ số khoảng cách (d(A,(P))/d(B,(P)) = IA/IB khi AB cắt (P) tại I).
+- Khoảng cách giữa đường thẳng và mặt phẳng song song: bằng khoảng cách từ một điểm bất kì trên đường thẳng đến mặt phẳng.
+- Khoảng cách giữa hai mặt phẳng song song: bằng khoảng cách từ một điểm bất kì của mặt phẳng này đến mặt phẳng kia.
+- Khoảng cách giữa hai đường thẳng chéo nhau: độ dài đoạn vuông góc chung, hoặc đưa về khoảng cách từ đường thẳng đến mặt phẳng song song chứa đường kia.
+'''
+
+  [[lop.chu_de]]
+  ten = "Thể tích khối đa diện"
+  ghi_chu = "hình học không gian thuần tuý, chưa dùng tọa độ"
+  dang = ["Thể tích khối chóp", "Thể tích khối lăng trụ", "Thể tích khối hộp", "Tỉ số thể tích"]
+  noi_dung = '''
+- Thể tích khối chóp V = (1/3)·S_đáy·h; khối chóp cụt đều V = (h/3)(S + S' + √(SS')).
+- Thể tích khối lăng trụ V = S_đáy·h; khối hộp chữ nhật V = abc; khối lập phương V = a³.
+- Xác định chiều cao qua quan hệ vuông góc (cạnh bên vuông góc đáy, mặt bên vuông góc đáy, chóp đều), kết hợp góc và khoảng cách đã học để tìm chiều cao.
+- Tỉ số thể tích hai khối chóp tam giác chung đỉnh: V_SA'B'C'/V_SABC = (SA'/SA)(SB'/SB)(SC'/SC).
+'''
 
   [[lop.chu_de]]
   ten = "Các quy tắc tính xác suất"
@@ -120,6 +153,18 @@ ten = "Lớp 12"
   [[lop.chu_de]]
   ten = "Xác suất có điều kiện"
   dang = ["Xác suất có điều kiện", "Công thức xác suất toàn phần và công thức Bayes"]
+
+  [[lop.chu_de]]
+  ten = "Hình học không gian và bài toán thực tế"
+  ghi_chu = "ôn tập góc, khoảng cách, thể tích của lớp 11 và vận dụng vào tình huống thực tế"
+  dang = ["Góc và khoảng cách trong hình không gian", "Thể tích khối chóp, khối lăng trụ, khối hộp", "Thể tích khối trụ", "Bài toán thực tế về thể tích", "Bài toán thực tế về góc và khoảng cách", "Bài toán tối ưu trong hình không gian"]
+  noi_dung = '''
+- Ôn tập và tổng hợp: góc giữa đường thẳng với đường thẳng, đường thẳng với mặt phẳng, mặt phẳng với mặt phẳng; khoảng cách từ điểm đến mặt phẳng, giữa đường thẳng và mặt phẳng song song, giữa hai mặt phẳng song song, giữa hai đường thẳng chéo nhau; thể tích khối chóp, lăng trụ, hộp.
+- Khối trụ: V = πr²h, diện tích xung quanh S = 2πrh; thiết diện qua trục là hình chữ nhật.
+- Bài toán thực tế: bể nước, thùng, hộp giấy, kim tự tháp, mái nhà, lều, cột, ống, lon nước; tính thể tích, lượng vật liệu, chi phí; góc nghiêng mái, độ cao, khoảng cách giữa các bộ phận công trình. Có thể gắn hệ trục Oxyz để giải nhưng đề phát biểu bằng lời.
+- Bài toán tối ưu: thể tích lớn nhất, vật liệu ít nhất (lập hàm một biến rồi dùng đạo hàm).
+- Đáp số trả lời ngắn cần làm tròn rõ ràng (đến hàng phần mười, hàng đơn vị, đơn vị cm³, m³, lít).
+'''
 
 # ==================== Đại học (khung Đại học Bách khoa Hà Nội) ====================
 
@@ -692,3 +737,20 @@ den = "Xác suất thống kê / Chương 2. Biến ngẫu nhiên và luật ph�
 [[doi_the]]
 tu = "Đại học / Xác suất thống kê"
 den = "Xác suất thống kê"
+
+# Hình học không gian lớp 11 tách khỏi "Quan hệ vuông góc" thành ba chủ đề riêng (2026-10-28)
+[[doi_the]]
+tu = "Lớp 11 / Quan hệ vuông góc trong không gian / Khoảng cách"
+den = "Lớp 11 / Khoảng cách trong không gian"
+
+[[doi_the]]
+tu = "Lớp 11 / Quan hệ vuông góc trong không gian / Thể tích"
+den = "Lớp 11 / Thể tích khối đa diện"
+
+[[doi_the]]
+tu = "Lớp 11 / Quan hệ vuông góc trong không gian / Góc giữa đường thẳng và mặt phẳng"
+den = "Lớp 11 / Góc trong không gian / Góc giữa đường thẳng và mặt phẳng"
+
+[[doi_the]]
+tu = "Lớp 11 / Quan hệ vuông góc trong không gian / Hai mặt phẳng vuông góc và góc nhị diện"
+den = "Lớp 11 / Quan hệ vuông góc trong không gian / Hai mặt phẳng vuông góc"
