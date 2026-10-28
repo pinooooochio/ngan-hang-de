@@ -56,6 +56,7 @@ export default function GenBatchPage() {
           </>
         )}
       </div>
+      {p.figure && <div className="muted">Mỗi câu có hình vẽ</div>}
       {p.notes && <div className="muted">Yêu cầu thêm: {p.notes}</div>}
       {busy && <div className="alert warn">Claude đang soạn câu hỏi, trang tự cập nhật khi xong.</div>}
       {b.error && <div className={`alert ${b.status === "failed" ? "error" : "warn"}`}>{b.error}</div>}

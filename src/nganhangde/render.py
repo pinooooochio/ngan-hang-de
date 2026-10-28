@@ -87,5 +87,9 @@ def render_answer_key(title: str, exam_date: str | None, variants: list[tuple[di
     )
 
 
+STYLE_FILES = ("nhd.sty", "nhd-hinh.sty")
+
+
 def copy_style(dest: Path) -> None:
-    shutil.copy(TEMPLATE_DIR / "nhd.sty", dest / "nhd.sty")
+    for name in STYLE_FILES:
+        shutil.copy(TEMPLATE_DIR / name, dest / name)

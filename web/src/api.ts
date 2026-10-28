@@ -267,6 +267,8 @@ export interface GenParams {
   type: QType;
   count: number;
   notes?: string;
+  /** Mỗi câu phải có hình vẽ TikZ. */
+  figure?: boolean;
 }
 
 export interface GenItem {
@@ -278,8 +280,16 @@ export interface GenItem {
   tags: string[][];
   errors: string[];
   warnings: string[];
+  /** Hình vẽ không biên dịch được (lần sinh cũ không có). */
+  figure_errors?: string[];
   duplicate_of: string | null;
   code: string | null;
+}
+
+export interface FigureResult {
+  id: string;
+  ok: boolean;
+  error: string;
 }
 
 export interface GenBatch {
@@ -529,6 +539,7 @@ export const api = {
   genCurriculum: () => request<Curriculum>("GET", "/api/gen/curriculum"),
   genCoverage: (grade: string) =>
     request<{ grade: string; slug: string; topics: CoverageTopic[] }>("GET", `/api/gen/coverage?grade=${encodeURIComponent(grade)}`),
+  figure: (code: string) => request<FigureResult>("POST", "/api/figures", { code }),
   genPrompt: (p: GenParams) => request<{ system: string; user: string; combined: string }>("POST", "/api/gen/prompt", p),
   genCheck: (params: GenParams, output: string) => request<GenItem[]>("POST", "/api/gen/check", { params, output }),
   genCreate: (params: GenParams, mode: "api" | "manual", output?: string) =>
