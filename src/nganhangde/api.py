@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import aigen, auth, backup, bank, builds, generator, practice, render
+from . import aigen, auth, backup, bank, builds, figures, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url, upgrade_schema
 from .models import (
@@ -31,6 +31,7 @@ from .models import (
     AnswerRequest,
     Attempt,
     Base,
+    Choice,
     BuildStatus,
     Exam,
     ExamTemplate,
@@ -113,6 +114,10 @@ def parsed_json(pq: ParsedQuestion) -> dict:
 
 class SourceIn(BaseModel):
     source: str
+
+
+class FigureIn(BaseModel):
+    code: str
 
 
 class SaveIn(BaseModel):
@@ -311,6 +316,7 @@ class GenParamsIn(BaseModel):
     type: QuestionType = QuestionType.MCQ
     count: int = Field(10, ge=1, le=aigen.MAX_COUNT)
     notes: str | None = None
+    figure: bool = False
 
 
 class GenCheckIn(BaseModel):
@@ -849,6 +855,54 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             if not result.ok:
                 raise HTTPException(422, f"Lỗi LaTeX: {result.error}")
             return Response(result.pdf.read_bytes(), media_type="application/pdf")
+
+    # ---------- Hình vẽ ----------
+
+    def figure_in_use(session: Session, user: User, code: str) -> bool:
+        """Hình có trong một câu của ngân hàng hoặc trong bài làm của học viên này không
+        (so sánh bỏ qua khác biệt khoảng trắng)."""
+        want = " ".join(code.split())
+
+        def has(text: str) -> bool:
+            return want in " ".join(text.split())
+
+        mark = "tikzpicture"
+        for stem, sol in session.execute(select(Question.stem_latex, Question.solution_latex).where(
+                Question.stem_latex.contains(mark) | Question.solution_latex.contains(mark))):
+            if has(stem) or has(sol or ""):
+                return True
+        if any(has(t) for t in session.scalars(select(Choice.content_latex).where(Choice.content_latex.contains(mark)))):
+            return True
+
+        def mentions(v) -> bool:
+            if isinstance(v, str):
+                return mark in v and has(v)
+            if isinstance(v, dict):
+                return any(mentions(x) for x in v.values())
+            if isinstance(v, list):
+                return any(mentions(x) for x in v)
+            return False
+
+        return any(mentions(a.data) for a in session.scalars(select(Attempt).where(Attempt.user_id == user.id)))
+
+    @app.post("/api/figures")
+    def figure(body: FigureIn, user: User = U, session: Session = S):
+        """Biên dịch một hình TikZ ra SVG (lưu lại, lần sau lấy ngay). Học viên chỉ được tạo ảnh
+        cho hình có sẵn trong câu hỏi hoặc bài làm, không biên dịch mã tuỳ ý."""
+        code = body.code.strip()
+        fid = figures.figure_id(code)
+        hit = figures.cached(fid)
+        if hit is None and user.role == Role.STUDENT and not figure_in_use(session, user, code):
+            raise HTTPException(403, "hình không thuộc câu hỏi nào")
+        f = hit or figures.render(code)
+        return {"id": f.id, "ok": f.ok, "error": f.error}
+
+    @app.get("/api/figures/{fid}.svg", dependencies=[U])
+    def figure_svg(fid: str):
+        if not figures.ID_RE.match(fid) or not figures.svg_path(fid).exists():
+            raise HTTPException(404, "không có hình này")
+        return FileResponse(figures.svg_path(fid), media_type="image/svg+xml",
+                            headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
     # ---------- Đề thi ----------
 

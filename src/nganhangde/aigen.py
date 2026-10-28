@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import tomllib
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +25,7 @@ from typing import Callable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import bank
+from . import bank, figures
 from .models import (
     BuildStatus,
     GenerationBatch,
@@ -282,9 +283,35 @@ Mỗi câu phải đúng mức độ được yêu cầu: đừng làm câu NB q
   (ví dụ "làm tròn kết quả đến hàng phần mười"), và ghi đáp số đã làm tròn trong \shortans.
 - Lời giải trình bày ngắn gọn các bước chính để học sinh tự đọc hiểu được. Không nhắc tới chữ cái
   của phương án ("chọn A", "đáp án B") vì thứ tự phương án sẽ bị đảo khi ra đề; nêu giá trị đúng thay vào đó.
-- Không vẽ hình bằng TikZ, không chèn ảnh; nếu cần hình thì mô tả bằng lời trong đề.
+- Không chèn ảnh (\includegraphics). Hình vẽ nếu có thì vẽ bằng TikZ theo mục "Hình vẽ" dưới đây.
 - Các câu trong cùng một lần sinh phải khác nhau về tình huống, dạng hỏi và số liệu; không chép lại câu
   đã có trong ngân hàng (nếu được liệt kê).
+
+# Hình vẽ
+
+Phần yêu cầu sẽ nói câu có cần hình hay không. Khi vẽ, mỗi hình là một khối
+\begin{tikzpicture}...\end{tikzpicture} đặt trong đề bài (hoặc trong lời giải nếu chỉ lời giải cần hình),
+thường đặt giữa \begin{center}...\end{center}. Hình được biên dịch bằng XeLaTeX, đã nạp sẵn: tikz
+(thư viện calc, angles, quotes, arrows.meta, patterns, intersections, positioning, decorations.markings),
+pgfplots (compat=1.18), tkz-euclide, tkz-tab. Không dùng \usepackage, \usetikzlibrary hay gói nào khác,
+không dùng \input, không định nghĩa lệnh mới bằng \def hay \newcommand.
+
+- Đồ thị hàm số: dùng pgfplots, trục qua gốc toạ độ (axis lines=middle), ghi nhãn $x$, $y$, $O$,
+  đánh dấu các điểm đặc biệt (cực trị, giao trục) có toạ độ nguyên; hình rộng khoảng 6 đến 7 cm.
+  Đồ thị phải khớp chính xác với hàm số trong lời giải (cùng cực trị, giao điểm, tiệm cận).
+- Bảng biến thiên, bảng xét dấu: dùng tkz-tab (\tkzTabInit, \tkzTabLine, \tkzTabVar) trong tikzpicture.
+- Hình phẳng: dùng tkz-euclide hoặc tikz với toạ độ tính sẵn, ghi tên điểm, kí hiệu góc vuông, đoạn bằng nhau.
+- Hình không gian (chóp, lăng trụ, hộp): vẽ theo phép chiếu song song như sách giáo khoa, cạnh khuất nét đứt
+  (dashed), cạnh thấy nét liền, đáy là hình bình hành nhìn nghiêng; khai báo toạ độ các đỉnh bằng \coordinate
+  rồi nối cạnh, ghi tên đỉnh không đè lên nét vẽ.
+- Hệ trục Oxyz: trục Oz thẳng đứng, Oy nằm ngang, Ox chéo xuống trái; có mũi tên và nhãn trục.
+- Hình chỉ thể hiện đúng dữ kiện trong đề, không ghi thêm đáp số lên hình.
+- Mã hình gọn: không quá khoảng 40 dòng, không dùng vòng lặp phức tạp.
+
+Câu đúng/sai có hình: đề dẫn đưa hình (đồ thị, bảng biến thiên hoặc hình không gian) kèm dữ kiện chung,
+bốn mệnh đề a) đến d) là các nhận định đọc hoặc suy ra từ hình (khoảng đồng biến, nghịch biến, cực trị,
+giá trị lớn nhất, số nghiệm của phương trình; quan hệ vuông góc, song song, góc, khoảng cách, thể tích),
+độ khó tăng dần, mệnh đề d) cần kết hợp hình với tính toán.
 """
 
 TYPE_NAMES = {
@@ -318,6 +345,7 @@ def normalize_params(p: dict) -> dict:
         "type": qtype.value,
         "count": count,
         "notes": (p.get("notes") or "").strip() or None,
+        "figure": bool(p.get("figure")),
     }
 
 
@@ -361,6 +389,11 @@ def build_prompt(session: Session, params: dict, n_examples: int = 2, n_avoid: i
         kind = "tự luận" if qtype == QuestionType.ESSAY else "trắc nghiệm"
         lines += ["", f"Định hướng câu hỏi {kind} của chương (chỉ dùng các ý thuộc chủ đề trên):"]
         lines += [f"- {h}" for h in hints]
+    if p["figure"]:
+        lines.append("- Hình vẽ: MỖI câu phải có hình vẽ TikZ trong đề bài (đồ thị, bảng biến thiên, hình phẳng"
+                     " hoặc hình không gian tuỳ chủ đề), câu hỏi khai thác thông tin từ hình, theo mục \"Hình vẽ\"")
+    else:
+        lines.append("- Hình vẽ: chỉ vẽ khi đề bài thật sự cần hình mới hiểu được; còn lại không vẽ")
     if p["notes"]:
         lines += ["", "Yêu cầu thêm của người soạn:", p["notes"]]
 
@@ -413,6 +446,10 @@ def short_answer_ok(ans: str) -> bool:
         return False
 
 
+def question_text(pq: ParsedQuestion) -> str:
+    return "\n".join([pq.stem, *(c.content for c in pq.choices), pq.solution or ""])
+
+
 def check_output(session: Session, params: dict, text: str) -> list[dict]:
     """Phân tích kết quả, ép thẻ và mức độ theo yêu cầu. Trả về danh sách kết quả từng câu
     (chưa lưu). Mỗi phần tử: index, state (new | duplicate | error), stem, type, tags, errors,
@@ -444,6 +481,12 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
                 pq.warnings.append("cả 4 mệnh đề cùng " + ("đúng" if n_true == 4 else "sai"))
         if not pq.solution:
             pq.warnings.append("chưa có lời giải")
+        if p["figure"] and not figures.find_figures(question_text(pq)):
+            pq.warnings.append("yêu cầu câu có hình nhưng câu này chưa có hình vẽ")
+
+    # Biên dịch thử mọi hình vẽ; hình lỗi không chặn câu mà được đánh dấu để người soạn sửa
+    with ThreadPoolExecutor(2) as pool:
+        fig_errors = dict(zip(map(id, parsed), pool.map(lambda pq: figures.check_text(question_text(pq)), parsed)))
 
     out = []
     for item in bank.preview_import(session, parsed):
@@ -457,6 +500,7 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
             "tags": pq.tags,
             "errors": pq.errors,
             "warnings": pq.warnings,
+            "figure_errors": fig_errors.get(id(pq), []),
             "duplicate_of": item.duplicate_of,
             "code": None,
             "parsed": pq,

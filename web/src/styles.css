@@ -531,6 +531,17 @@ main {
   color: var(--muted);
   font-style: italic;
 }
+.tex-figure.error {
+  color: var(--bad);
+  font-style: normal;
+}
+.tex-figure-img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+  background: #fff;
+}
 .tex-center {
   text-align: center;
 }
@@ -1135,6 +1146,16 @@ button.answer-choice.picked {
 .gen-grid select,
 .gen-grid textarea {
   width: 100%;
+}
+.gen-grid label.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 14px;
+}
+.gen-grid label.check input {
+  width: auto;
 }
 .manual {
   display: grid;

@@ -6,11 +6,11 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-# Bước 2: máy chủ Python + TeX Live (XeLaTeX), cùng bản TeX Live 2023 đã dùng để kiểm thử
+# Bước 2: máy chủ Python + TeX Live (XeLaTeX, gói vẽ hình) + pdftocairo (hình vẽ ra SVG), cùng bản TeX Live 2023 đã dùng để kiểm thử
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-venv texlive-xetex texlive-latex-extra latexmk lmodern fonts-lmodern \
+ && apt-get install -y --no-install-recommends python3 python3-venv texlive-xetex texlive-latex-extra texlive-pictures latexmk poppler-utils lmodern fonts-lmodern \
  && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH

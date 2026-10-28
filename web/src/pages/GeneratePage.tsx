@@ -266,6 +266,10 @@ export default function GeneratePage() {
               onChange={(e) => update({ count: Number(e.target.value) || 0 })}
             />
           </label>
+          <label className="check full">
+            <input type="checkbox" checked={!!params.figure} onChange={(e) => update({ figure: e.target.checked || undefined })} />
+            Câu có hình vẽ (đồ thị, bảng biến thiên, hình phẳng, hình không gian vẽ bằng TikZ)
+          </label>
           <label className="full">
             Yêu cầu thêm (tuỳ chọn)
             <textarea
@@ -406,6 +410,11 @@ export function GenItems({ items }: { items: GenItem[] }) {
           {it.errors.map((e) => (
             <div key={e} className="alert error small">
               {e}
+            </div>
+          ))}
+          {it.figure_errors?.map((e) => (
+            <div key={e} className="alert error small">
+              {e}. Câu vẫn được lưu vào nháp, cần sửa hình trước khi duyệt.
             </div>
           ))}
           {it.warnings.map((w) => (

@@ -57,7 +57,6 @@ function replaceCommand(s: string, name: string, nargs: number, fn: (args: strin
 
 function textToHtml(s: string): string {
   let t = escapeHtml(s);
-  t = t.replace(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/g, '<span class="tex-figure">[hình vẽ TikZ: xem PDF]</span>');
   t = replaceCommand(t, "includegraphics", 1, () => '<span class="tex-figure">[hình ảnh: xem PDF]</span>');
   t = replaceCommand(t, "textbf", 1, ([a]) => `<b>${a}</b>`);
   t = replaceCommand(t, "textit", 1, ([a]) => `<i>${a}</i>`);
@@ -75,7 +74,17 @@ function textToHtml(s: string): string {
   return t;
 }
 
-export function latexToHtml(src: string): string {
-  const parts = src.split(MATH_RE);
-  return parts.map((p, i) => (i % 2 === 1 ? escapeHtml(p) : textToHtml(p))).join("");
+const TIKZ_RE = /\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/g;
+
+/** Chuyển nội dung LaTeX sang HTML. Mỗi hình TikZ thành một chỗ trống `<span data-fig="i">`
+ *  (i là vị trí trong `figures`) để Tex thay bằng ảnh SVG do máy chủ vẽ. */
+export function latexToHtml(src: string, figures: string[] = []): string {
+  // Tách hình trước, vì trong hình cũng có $...$
+  const marked = src.replace(TIKZ_RE, (code) => {
+    figures.push(code);
+    return `\u0000FIG${figures.length - 1}\u0000`;
+  });
+  const parts = marked.split(MATH_RE);
+  const html = parts.map((p, i) => (i % 2 === 1 ? escapeHtml(p) : textToHtml(p))).join("");
+  return html.replace(/\u0000FIG(\d+)\u0000/g, '<span class="tex-figure" data-fig="$1">[đang vẽ hình…]</span>');
 }
