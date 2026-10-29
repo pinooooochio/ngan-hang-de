@@ -206,3 +206,15 @@ def test_api_batch_runs_in_worker(app, monkeypatch):
 def test_short_answer_rule():
     assert aigen.short_answer_ok("2,5") and aigen.short_answer_ok("-12") and aigen.short_answer_ok("0,75")
     assert not aigen.short_answer_ok("12,25") and not aigen.short_answer_ok("x=2")
+
+
+def test_batch_list_has_creator_and_pending(app):
+    c = app.state.client
+    b = c.post("/api/gen/batches", json={"params": PARAMS, "mode": "manual", "output": OUTPUT}).json()
+    assert b["username"] == "admin"
+    listed = c.get("/api/gen/batches").json()
+    assert listed[0]["id"] == b["id"] and listed[0]["n_pending"] == 2 and listed[0]["user_id"] == b["user_id"]
+    # duyệt một câu thì số câu chờ duyệt giảm
+    code = next(it["code"] for it in b["items"] if it["code"])
+    assert c.post("/api/questions/bulk", json={"codes": [code], "status": "approved"}).status_code == 200
+    assert c.get("/api/gen/batches").json()[0]["n_pending"] == 1

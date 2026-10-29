@@ -1398,3 +1398,66 @@ label.button:hover {
   display: inline-flex;
   gap: 4px;
 }
+
+/* Lịch sử sinh câu AI: nhóm theo khung chương trình */
+.gen-history .toolbar h3 {
+  margin: 0;
+}
+.gen-pins {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.gen-groups {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 0;
+}
+.gen-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  padding: 7px 12px;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.gen-group-head:hover {
+  background: var(--accent-soft);
+}
+.gen-group-head.lvl-0 {
+  font-weight: 600;
+}
+.gen-group-head.lvl-1 {
+  padding-left: 32px;
+}
+.gen-group-head.lvl-2 {
+  padding-left: 52px;
+}
+.gen-group-head .twisty {
+  width: 12px;
+  color: var(--muted);
+}
+.gen-group-name {
+  flex: 1;
+}
+.gen-sum {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.gen-topic-body {
+  padding: 0 12px 10px 52px;
+}
+.gen-table {
+  margin: 4px 0;
+}

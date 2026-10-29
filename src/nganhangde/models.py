@@ -281,6 +281,9 @@ class GenerationBatch(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # người tạo lần sinh (như nhật ký sửa câu: giữ tên kể cả khi tài khoản bị xoá)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    username: Mapped[str | None] = mapped_column(String(100))
 
     @property
     def source(self) -> str:

@@ -330,10 +330,12 @@ class GenBatchIn(BaseModel):
     output: str | None = None
 
 
-def batch_json(b: GenerationBatch, full: bool = False) -> dict:
+def batch_json(b: GenerationBatch, full: bool = False, n_pending: int | None = None) -> dict:
     items = b.items or []
     data = {
         "id": b.id,
+        "user_id": b.user_id,
+        "username": b.username,
         "mode": b.mode,
         "status": b.status.value,
         "params": b.params,
@@ -347,6 +349,8 @@ def batch_json(b: GenerationBatch, full: bool = False) -> dict:
         "n_duplicate": sum(1 for it in items if it["state"] == "duplicate"),
         "n_error": sum(1 for it in items if it["state"] == "error"),
     }
+    if n_pending is not None:
+        data["n_pending"] = n_pending  # câu của lần sinh còn ở trạng thái nháp
     if full:
         data.update(system_prompt=b.system_prompt, user_prompt=b.user_prompt, output=b.output, items=items)
     return data
@@ -1228,10 +1232,11 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             it.pop("parsed")
         return items
 
-    @app.post("/api/gen/batches", status_code=201, dependencies=[STAFF])
-    def gen_create(body: GenBatchIn, session: Session = S):
+    @app.post("/api/gen/batches", status_code=201)
+    def gen_create(body: GenBatchIn, user: User = STAFF, session: Session = S):
         try:
-            batch = aigen.create_batch(session, body.params.model_dump(mode="json"), body.mode, body.output)
+            batch = aigen.create_batch(session, body.params.model_dump(mode="json"), body.mode, body.output,
+                                       user_id=user.id, username=user.username)
         except aigen.GenError as e:
             session.rollback()
             raise HTTPException(422, str(e))
@@ -1239,8 +1244,14 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     @app.get("/api/gen/batches", dependencies=[STAFF])
     def gen_list(session: Session = S):
-        rows = session.scalars(select(GenerationBatch).order_by(GenerationBatch.id.desc()).limit(100))
-        return [batch_json(b) for b in rows]
+        """Mọi lần sinh (trang Sinh câu AI nhóm theo khung chương trình), kèm số câu còn chờ duyệt."""
+        pending = dict(session.execute(
+            select(Question.source, func.count())
+            .where(Question.status == Status.DRAFT, Question.source.startswith("AI #"))
+            .group_by(Question.source)
+        ).all())
+        rows = session.scalars(select(GenerationBatch).order_by(GenerationBatch.id.desc()))
+        return [batch_json(b, n_pending=pending.get(b.source, 0)) for b in rows]
 
     def load_batch(session: Session, batch_id: int) -> GenerationBatch:
         b = session.get(GenerationBatch, batch_id)
