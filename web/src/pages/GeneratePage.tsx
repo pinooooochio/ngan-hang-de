@@ -14,6 +14,7 @@ import {
   type Level,
   type QType,
 } from "../api";
+import GenHistory from "../components/GenHistory";
 import Tex from "../components/Tex";
 
 const TARGET_KEY = "nhd.gen.target";
@@ -26,11 +27,7 @@ function readTarget() {
   }
 }
 
-export const STATUS_LABEL = { pending: "Đang chờ", running: "Đang sinh", done: "Xong", failed: "Lỗi" };
-
-export function bankLink(source: string) {
-  return `/?nguon=${encodeURIComponent(source)}&trangthai=draft`;
-}
+export { STATUS_LABEL, bankLink } from "../components/GenHistory";
 
 export default function GeneratePage() {
   const navigate = useNavigate();
@@ -46,6 +43,7 @@ export default function GeneratePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [focusTopic, setFocusTopic] = useState<string>();
 
   useEffect(() => {
     api.genCurriculum().then(setCur);
@@ -85,6 +83,7 @@ export default function GeneratePage() {
 
   const pickCell = (t: CoverageTopic, level: Level) => {
     update({ topic: t.name, level, dang: undefined });
+    setFocusTopic(t.name);
     document.getElementById("gen-form")?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -332,58 +331,7 @@ export default function GeneratePage() {
         )}
       </section>
 
-      <h3>Các lần sinh</h3>
-      {batches.length === 0 ? (
-        <div className="muted">Chưa có lần sinh nào.</div>
-      ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Ô sinh</th>
-              <th>Cách</th>
-              <th>Trạng thái</th>
-              <th>Kết quả</th>
-              <th>Lúc</th>
-            </tr>
-          </thead>
-          <tbody>
-            {batches.map((b) => (
-              <tr key={b.id}>
-                <td>
-                  <Link to={`/sinh/${b.id}`}>#{b.id}</Link>
-                </td>
-                <td>
-                  {b.params.topic}
-                  <div className="muted small">
-                    {b.params.grade} · {levelLabel(b.params.level)} · {typeLabel(b.params.type)} · {b.params.count} câu
-                  </div>
-                </td>
-                <td>{b.mode === "api" ? "Claude API" : "Dán tay"}</td>
-                <td>
-                  <span className={`badge ${b.status === "done" ? "approved" : b.status === "failed" ? "state-error" : "draft"}`}>
-                    {STATUS_LABEL[b.status]}
-                  </span>
-                  {b.error && <div className="muted small">{b.error}</div>}
-                </td>
-                <td>
-                  {b.status === "done" && (
-                    <>
-                      {b.n_added > 0 ? <Link to={bankLink(b.source)}>Duyệt {b.n_added} câu</Link> : "0 câu mới"}
-                      {(b.n_duplicate > 0 || b.n_error > 0) && (
-                        <div className="muted small">
-                          {b.n_duplicate} trùng, {b.n_error} lỗi
-                        </div>
-                      )}
-                    </>
-                  )}
-                </td>
-                <td className="muted">{b.created_at.replace("T", " ")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <GenHistory batches={batches} grades={cur?.grades ?? []} grade={grade} focusTopic={focusTopic} />
     </div>
   );
 }

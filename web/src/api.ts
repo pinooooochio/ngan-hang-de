@@ -306,6 +306,10 @@ export interface GenBatch {
   n_added: number;
   n_duplicate: number;
   n_error: number;
+  /** Số câu của lần sinh còn ở trạng thái nháp (chỉ có trong danh sách). */
+  n_pending?: number;
+  user_id: number | null;
+  username: string | null;
 }
 
 export interface GenBatchDetail extends GenBatch {

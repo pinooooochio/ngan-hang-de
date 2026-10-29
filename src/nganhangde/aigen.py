@@ -531,7 +531,8 @@ def import_batch(session: Session, batch: GenerationBatch, text: str) -> None:
     session.commit()
 
 
-def create_batch(session: Session, params: dict, mode: str, output: str | None = None) -> GenerationBatch:
+def create_batch(session: Session, params: dict, mode: str, output: str | None = None,
+                 user_id: int | None = None, username: str | None = None) -> GenerationBatch:
     p = normalize_params(params)
     system, user = build_prompt(session, p)
     batch = GenerationBatch(
@@ -542,6 +543,8 @@ def create_batch(session: Session, params: dict, mode: str, output: str | None =
         user_prompt=user,
         model=model_name() if mode == "api" else None,
         items=[],
+        user_id=user_id,
+        username=username,
     )
     session.add(batch)
     session.flush()
