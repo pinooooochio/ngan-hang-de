@@ -150,6 +150,13 @@ Nên cho thư mục `backups` đồng bộ lên Google Drive / OneDrive (hoặc 
   hàng). Trang sửa câu có **Tách khỏi nhóm** và **Chuyển sang nhóm khác**; ở ngân hàng tick nhiều câu cùng dạng rồi
   bấm **Gộp thành nhóm biến thể**. Dữ liệu nhóm kiểu cũ được chuyển tự động khi khởi động.
 
+  **Sinh biến thể hàng loạt** (`/sinh/bien-the`): chọn câu gốc theo chủ đề / dạng, theo một đề đã ghép, hoặc
+  tick câu ở ngân hàng rồi bấm **Sinh biến thể**; lọc thêm mức độ, loại câu, "chỉ câu tính toán". Chỉ câu đã duyệt
+  làm câu gốc, mỗi nhóm một câu đại diện, tối đa 100 câu gốc mỗi đợt. Mỗi câu gốc sinh đúng k biến thể (mặc định 5,
+  tối đa 10); mỗi lần gọi gộp tối đa 4 câu gốc cùng loại, cùng thẻ, mỗi biến thể ghi `% @bienthe: <mã câu gốc>` để
+  xếp đúng nhóm. Biến thể trùng số liệu với câu khác trong nhóm bị loại; nhóm chưa có mô tả dạng thì AI ghi thêm
+  `% @dang-bien-the:`.
+
   Dòng lệnh: `nhd prompt --lop "Lớp 12" --chu-de "Nguyên hàm và tích phân" --muc TH --loai mcq --so 10` in prompt;
   `nhd sinh ...` (cùng tham số) gọi Claude API và lưu câu nháp.
 

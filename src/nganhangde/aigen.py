@@ -46,6 +46,9 @@ TEMPLATES = Path(__file__).parent / "templates"
 DEFAULT_MODEL = "claude-opus-5-5"
 MAX_COUNT = 30  # số câu tối đa mỗi lần sinh, để kết quả không quá dài
 MAX_TOTAL = 300  # tổng số câu tối đa của một đợt sinh nhiều ô bằng API (mỗi ô một lần gọi)
+MAX_SOURCES = 100  # số câu gốc tối đa của một đợt sinh biến thể hàng loạt
+MAX_PER = 10  # số biến thể tối đa cho mỗi câu gốc
+PACK = 4  # số câu gốc gộp trong một lần gọi (một prompt)
 MAX_PROMPT = 60  # tổng số câu tối đa của một prompt gộp (cách chép prompt); hơn thì chia phần
 LEVEL_ORDER = [Level.NB, Level.TH, Level.VD, Level.VDC]
 
@@ -358,6 +361,9 @@ def normalize_params(p: dict) -> dict:
         "notes": (p.get("notes") or "").strip() or None,
         "figure": bool(p.get("figure")),
         "variant_of": (p.get("variant_of") or "").strip() or None,
+        # sinh biến thể cho nhiều câu gốc trong một lần gọi: mỗi câu gốc `per` biến thể
+        "variants_of": [c.strip() for c in p.get("variants_of") or [] if c and c.strip()] or None,
+        "per": int(p.get("per") or 0) or None,
     }
 
 
@@ -369,6 +375,8 @@ def _short(text: str, n: int = 220) -> str:
 def build_prompt(session: Session, params: dict, n_examples: int = 2, n_avoid: int = 40) -> tuple[str, str]:
     """Trả về (prompt hệ thống, prompt yêu cầu). Prompt hệ thống không đổi giữa các lần gọi."""
     p = normalize_params(params)
+    if p["variants_of"]:
+        return SYSTEM_PROMPT, multi_variant_prompt(session, p)
     if p["variant_of"]:
         return SYSTEM_PROMPT, variant_prompt(session, p)
     level, qtype = Level(p["level"]), QuestionType(p["type"])
@@ -481,6 +489,7 @@ def variant_prompt(session: Session, p: dict) -> str:
         "- Lời giải viết lại đầy đủ theo số liệu mới, tự giải lại từ đầu chứ không sửa số trong lời giải cũ.",
         "- Câu gốc có hình thì vẽ lại hình đúng theo số liệu mới.",
         f"- Dòng thẻ của mỗi biến thể: % @tags: {tags} ; @level: {p['level']}",
+        *_label_rule(session, q),
         "",
         "Câu gốc:",
         "",
@@ -492,6 +501,149 @@ def variant_prompt(session: Session, p: dict) -> str:
         lines += [f"- {_short(o.stem_latex)}" for o in others[:40]]
     lines += ["", f"Trả về đúng {p['count']} khối câu hỏi theo định dạng đã nêu, không kèm lời dẫn."]
     return "\n".join(lines)
+
+
+VARIANT_RULES = [
+    "- Giữ nguyên loại câu, mức độ, cách hỏi, số bước giải và kiểu phương án nhiễu (nhiễu vẫn lấy từ "
+    "cùng các lỗi sai như câu gốc); chỉ thay số liệu, và nếu cần thì tên điểm, tên hàm.",
+    "- Chọn số liệu để kết quả vẫn gọn; đáp án của mỗi biến thể phải khác đáp án câu gốc và khác nhau.",
+    "- Lời giải viết lại đầy đủ theo số liệu mới, tự giải lại từ đầu chứ không sửa số trong lời giải cũ.",
+    "- Câu gốc có hình thì vẽ lại hình đúng theo số liệu mới.",
+]
+
+
+def _label_rule(session: Session, q: Question) -> list[str]:
+    """Nhóm chưa có mô tả dạng bài thì xin mô tả ở biến thể đầu tiên."""
+    g = bank.get_group(session, q.variant_group)
+    if g is not None and g.label:
+        return []
+    return ["- Ở biến thể đầu tiên, thêm một dòng `% @dang-bien-the: <mô tả ngắn dạng bài, dưới 12 chữ>` "
+            "(ví dụ: Độ dài vectơ từ toạ độ) ngay trên dòng @tags."]
+
+
+def multi_variant_prompt(session: Session, p: dict) -> str:
+    """Prompt sinh biến thể cho nhiều câu gốc cùng lúc; mỗi biến thể ghi mã câu gốc ở dòng @bienthe."""
+    from .serialize import question_to_ex
+
+    per, codes = p["per"], p["variants_of"]
+    lines = [
+        f"Hãy soạn biến thể cho {len(codes)} câu gốc dưới đây, mỗi câu gốc đúng {per} biến thể "
+        f"(tổng cộng {per * len(codes)} câu).",
+        *VARIANT_RULES,
+        "- Mỗi biến thể bắt đầu bằng dòng `% @bienthe: <mã câu gốc>`, rồi tới dòng @tags (chép đúng dòng thẻ "
+        "ghi ở câu gốc đó), dòng @kiemtra nếu có, rồi khối \\begin{ex}...\\end{ex}.",
+        "- Câu gốc nào ghi \"cần mô tả dạng\" thì ở biến thể đầu tiên của câu đó thêm dòng "
+        "`% @dang-bien-the: <mô tả ngắn dạng bài, dưới 12 chữ>` ngay dưới dòng @bienthe.",
+    ]
+    for i, code in enumerate(codes, 1):
+        q = bank.get_question(session, code)
+        if q is None:
+            raise GenError(f"không có câu {code}")
+        tags = " ; ".join(" / ".join(bank.tag_names(t)) for t in q.tags)
+        level = (q.level or Level.TH).value
+        lines += ["", f"## Câu gốc {i}: % @bienthe: {q.code}"
+                  + (" (cần mô tả dạng)" if _label_rule(session, q) else ""),
+                  f"Dòng thẻ: % @tags: {tags} ; @level: {level}", "", question_to_ex(q).strip()]
+        others = [o for o in bank.variant_members(session, q) if o.id != q.id]
+        if others:
+            lines += ["", "Nhóm của câu này đã có các biến thể sau, biến thể mới phải dùng số liệu khác:"]
+            lines += [f"- {_short(o.stem_latex)}" for o in others[:20]]
+    lines += ["", f"Trả về đúng {per * len(codes)} khối câu hỏi ({per} biến thể cho mỗi câu gốc, theo thứ tự "
+              "các câu gốc), không kèm lời dẫn."]
+    return "\n".join(lines)
+
+
+SOURCE_RE = re.compile(r"^\s*%\s*@bienthe\s*:\s*(\S+)", re.MULTILINE)
+LABEL_RE = re.compile(r"^\s*%\s*@dang-bien-the\s*:\s*(.+?)\s*$", re.MULTILINE)
+NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def numbers_of(stem: str) -> tuple[str, ...]:
+    """Dãy số xuất hiện trong đề, để nhận ra biến thể trùng số liệu với câu khác cùng nhóm."""
+    return tuple(NUM_RE.findall(stem))
+
+
+def plan_variants(session: Session, questions: list[Question], computational_only: bool = False) -> dict:
+    """Chọn câu gốc cho đợt sinh biến thể hàng loạt từ các câu được chọn (theo chủ đề, theo đề, hoặc chọn
+    tay): chỉ câu đã duyệt, đã gắn thẻ; mỗi nhóm biến thể một câu (ưu tiên câu gốc của nhóm); tối đa
+    MAX_SOURCES câu. Trả về {"sources": [...], "skipped": [{code, reason}]}."""
+    sources: list[Question] = []
+    skipped: list[dict] = []
+    taken: dict[str, str] = {}  # nhóm -> câu đã lấy
+    seen: set[int] = set()
+    # câu gốc của nhóm đứng trước để được chọn làm đại diện
+    origins = {g.code: g.origin_code for g in session.scalars(select(bank.VariantGroup))}
+    ordered = sorted((q for q in questions if q is not None),
+                     key=lambda q: (origins.get(q.variant_group) != q.code, q.id))
+    for q in ordered:
+        if q.id in seen:
+            continue
+        seen.add(q.id)
+        if q.status != Status.APPROVED:
+            skipped.append({"code": q.code, "reason": "chưa duyệt"})
+        elif not q.tags:
+            skipped.append({"code": q.code, "reason": "chưa gắn thẻ lớp / chủ đề"})
+        elif computational_only and q.type in (QuestionType.ESSAY, QuestionType.TRUE_FALSE):
+            skipped.append({"code": q.code, "reason": "không phải câu tính toán (tự luận, đúng/sai)"})
+        elif q.variant_group and q.variant_group in taken:
+            skipped.append({"code": q.code, "reason": f"cùng nhóm {q.variant_group} với câu {taken[q.variant_group]}"})
+        elif len(sources) >= MAX_SOURCES:
+            skipped.append({"code": q.code, "reason": f"vượt {MAX_SOURCES} câu gốc mỗi đợt"})
+        else:
+            sources.append(q)
+            if q.variant_group:
+                taken[q.variant_group] = q.code
+    return {"sources": sources, "skipped": skipped}
+
+
+def variant_packs(session: Session, codes: list[str], per: int) -> list[dict]:
+    """Chia các câu gốc thành các lần gọi: mỗi lần tối đa PACK câu cùng loại, cùng thẻ chính, và tổng số
+    biến thể không quá MAX_COUNT. Trả về tham số từng lần sinh."""
+    if not 1 <= per <= MAX_PER:
+        raise GenError(f"số biến thể mỗi câu gốc từ 1 đến {MAX_PER}")
+    if not codes:
+        raise GenError("chưa chọn câu gốc nào")
+    if len(codes) > MAX_SOURCES:
+        raise GenError(f"mỗi đợt tối đa {MAX_SOURCES} câu gốc")
+    qs = []
+    for code in dict.fromkeys(codes):
+        q = bank.get_question(session, code)
+        if q is None:
+            raise GenError(f"không có câu {code}")
+        if q.status != Status.APPROVED:
+            raise GenError(f"câu {code} chưa duyệt, không dùng làm câu gốc")
+        qs.append(q)
+    size = max(1, min(PACK, MAX_COUNT // per))
+    qs.sort(key=lambda q: (q.type.value, q.tags[0].path if q.tags else "", q.id))
+    packs: list[list[Question]] = []
+    for q in qs:
+        last = packs[-1] if packs else None
+        if last and len(last) < size and last[0].type == q.type and (
+                (last[0].tags[0].path if last[0].tags else "") == (q.tags[0].path if q.tags else "")):
+            last.append(q)
+        else:
+            packs.append([q])
+    out = []
+    for pack in packs:
+        base = variant_params(session, pack[0].code, per * len(pack))
+        out.append({**base, "variant_of": None, "variants_of": [q.code for q in pack], "per": per,
+                    "figure": any(figures.find_figures(q.stem_latex) for q in pack)})
+    return out
+
+
+def create_variant_group(session: Session, codes: list[str], per: int, mode: str, output: str | None = None,
+                         user_id: int | None = None, username: str | None = None,
+                         group_id: str | None = None, notes: str | None = None) -> list[GenerationBatch]:
+    """Đợt sinh biến thể hàng loạt: mỗi gói câu gốc một lần sinh, chung mã đợt. Dán tay thì `codes` là
+    đúng một gói (một prompt)."""
+    packs = variant_packs(session, codes, per)
+    if mode == "manual" and len(packs) != 1:
+        raise GenError("dán tay: mỗi lần lưu đúng một phần (một prompt)")
+    group = group_id if group_id and re.fullmatch(r"[0-9a-f]{10}", group_id) else uuid.uuid4().hex[:10]
+    batches = [create_batch(session, {**p, "notes": notes}, mode, output, user_id=user_id, username=username,
+                            group_id=group) for p in packs]
+    session.commit()
+    return batches
 
 
 def combined_prompt(system: str, user: str) -> str:
@@ -530,9 +682,36 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
     base = topic_names(p["grade"], p["topic"])
     text = strip_fences(text)
     parsed = parse_text(text)
-    lines = [kiemtra.find_line(chunk) for chunk in split_blocks(text)]
-    original = bank.get_question(session, p["variant_of"]) if p.get("variant_of") else None
+    chunks = split_blocks(text)
+    lines = [kiemtra.find_line(chunk) for chunk in chunks]
+    # biến thể: câu gốc của từng câu (một câu gốc, hoặc nhiều câu gốc nhận ra qua dòng @bienthe)
+    originals: dict[str, Question] = {}
+    for code in p["variants_of"] or ([p["variant_of"]] if p["variant_of"] else []):
+        q = bank.get_question(session, code)
+        if q is None:
+            raise GenError(f"không có câu {code}")
+        originals[q.code] = q
+    source_of: dict[int, Question | None] = {}
+    labels: dict[int, str] = {}
+    for i, pq in enumerate(parsed):
+        chunk = chunks[i] if i < len(chunks) else ""
+        m = SOURCE_RE.search(chunk)
+        if p["variants_of"]:
+            source_of[id(pq)] = originals.get(m.group(1)) if m else None
+            if source_of[id(pq)] is None:
+                pq.errors.append("thiếu dòng % @bienthe hoặc mã câu gốc không nằm trong yêu cầu"
+                                 + (f" ({m.group(1)})" if m else ""))
+        elif originals:
+            source_of[id(pq)] = next(iter(originals.values()))
+        lm = LABEL_RE.search(chunk)
+        if lm:
+            labels[id(pq)] = lm.group(1)[:200]
     for pq in parsed:
+        original = source_of.get(id(pq))
+        if original is not None:
+            level, qtype = original.level or Level(p["level"]), original.type
+        else:
+            level, qtype = Level(p["level"]), QuestionType(p["type"])
         pq.code = None  # mã và nguồn do hệ thống đặt
         pq.source = None
         pq.level = level
@@ -544,7 +723,8 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
                     dang = t[len(base)]
                     break
         # biến thể giữ nguyên mọi thẻ của câu gốc
-        pq.tags = [bank.tag_names(t) for t in original.tags] if original else [base + ([dang] if dang else [])]
+        pq.tags = ([bank.tag_names(t) for t in original.tags] if original is not None
+                   else [base + ([dang] if dang else [])])
         pq.warnings = [w for w in pq.warnings if "thẻ" not in w and "mức độ" not in w]
         if pq.type != qtype:
             pq.errors.append(f"loại câu là {pq.type.value}, yêu cầu {qtype.value}")
@@ -564,9 +744,24 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
         fig_errors = dict(zip(map(id, parsed), pool.map(lambda pq: figures.check_text(question_text(pq)), parsed)))
 
     answer_errors = {id(pq): kiemtra.check_question(pq, line) for pq, line in zip(parsed, lines)}
+    # biến thể không được trùng số liệu với câu khác trong nhóm (kể cả câu khác của lần sinh này)
+    signatures: dict[str, dict[tuple, str]] = {}
     out = []
     for item in bank.preview_import(session, parsed):
         pq = item.parsed
+        original = source_of.get(id(pq))
+        if original is not None and item.state == "new":
+            sigs = signatures.get(original.code)
+            if sigs is None:
+                sigs = signatures[original.code] = {numbers_of(m.stem_latex): m.code
+                                                    for m in bank.variant_members(session, original)}
+            sig = numbers_of(pq.stem)
+            if sig and sig in sigs:
+                item.state = "duplicate"
+                item.duplicate_of = sigs[sig] or "câu khác trong lần sinh này"
+                pq.warnings.append("trùng số liệu với một câu cùng nhóm biến thể")
+            elif sig:
+                sigs[sig] = ""
         out.append({
             "index": item.index,
             "state": item.state,
@@ -581,6 +776,8 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
             "answer_checked": item.index < len(lines) and lines[item.index] is not None,
             "duplicate_of": item.duplicate_of,
             "code": None,
+            "variant_of": original.code if original is not None else None,
+            "variant_label": labels.get(id(pq)),
             "parsed": pq,
         })
     return out
@@ -589,8 +786,6 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
 def import_batch(session: Session, batch: GenerationBatch, text: str) -> None:
     """Kiểm tra kết quả `text` của lần sinh và lưu câu hợp lệ vào ngân hàng ở trạng thái nháp."""
     items = check_output(session, batch.params, text)
-    variant_of = batch.params.get("variant_of")
-    original = bank.get_question(session, variant_of) if variant_of else None
     batch.output = text
     for it in items:
         pq: ParsedQuestion = it.pop("parsed")
@@ -599,8 +794,9 @@ def import_batch(session: Session, batch: GenerationBatch, text: str) -> None:
         q = Question(code=bank.next_code(session), status=Status.DRAFT, source=batch.source)
         bank._apply(session, q, pq)
         q.check_note = "; ".join(it["figure_errors"] + it["answer_errors"]) or None
+        original = bank.get_question(session, it["variant_of"]) if it.get("variant_of") else None
         if original is not None:
-            q.variant_group = bank.ensure_group(session, original).code
+            q.variant_group = bank.ensure_group(session, original, it.get("variant_label")).code
         session.add(q)
         session.flush()
         it["code"] = q.code

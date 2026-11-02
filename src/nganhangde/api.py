@@ -345,6 +345,24 @@ class GenMultiIn(GenRowsIn):
     group_id: str | None = None  # dán tay nhiều phần: phần sau gộp vào đợt của phần trước
 
 
+class VariantPlanIn(BaseModel):
+    tag: str | None = None  # theo chủ đề / dạng (đường dẫn thẻ)
+    levels: list[Level] = []
+    types: list[QuestionType] = []
+    exam_id: int | None = None  # theo đề đã ghép
+    codes: list[str] = Field([], max_length=2000)  # theo các câu đang chọn
+    computational_only: bool = False
+
+
+class VariantRunIn(BaseModel):
+    codes: list[str] = Field(min_length=1, max_length=aigen.MAX_SOURCES)
+    per: int = Field(5, ge=1, le=aigen.MAX_PER)
+    notes: str | None = None
+    mode: str = Field("api", pattern="^(api|manual)$")
+    output: str | None = None
+    group_id: str | None = None
+
+
 class GenBatchIn(BaseModel):
     params: GenParamsIn
     mode: str = Field("api", pattern="^(api|manual)$")
@@ -1408,6 +1426,82 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         try:
             batches = aigen.create_group(session, rows_of(body), body.mode, body.output,
                                          user_id=user.id, username=user.username, group_id=body.group_id)
+        except aigen.GenError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        return {"group_id": batches[0].group_id, "batches": [batch_json(b) for b in batches]}
+
+    # ---------- Sinh biến thể hàng loạt ----------
+
+    @app.post("/api/gen/variants/plan", dependencies=[STAFF])
+    def variant_plan(body: VariantPlanIn, session: Session = S):
+        """Câu gốc cho đợt sinh biến thể theo chủ đề, theo đề, hoặc theo các câu đang chọn."""
+        if body.exam_id is not None:
+            exam = load_exam(session, body.exam_id)
+            qs = [it.question for it in sorted(exam.items, key=lambda it: (it.section, it.position))]
+        elif body.codes:
+            qs = [bank.get_question(session, c) for c in body.codes]
+        elif body.tag:
+            qs = list(session.scalars(bank.question_query(tag=body.tag).order_by(Question.id)))
+        else:
+            raise HTTPException(422, "cần chọn chủ đề, đề hoặc các câu")
+        if body.levels:
+            qs = [q for q in qs if q is not None and q.level in body.levels]
+        if body.types:
+            qs = [q for q in qs if q is not None and q.type in body.types]
+        plan = aigen.plan_variants(session, qs, body.computational_only)
+        sizes = {}
+        for q in plan["sources"]:
+            if q.variant_group and q.variant_group not in sizes:
+                sizes[q.variant_group] = bank.group_size(session, q.variant_group)
+        labels = {g.code: g.label for g in session.scalars(
+            select(VariantGroup).where(VariantGroup.code.in_(list(sizes))))} if sizes else {}
+        return {
+            "sources": [{**question_json(q, full=False), "n_variants": sizes.get(q.variant_group, 1),
+                         "variant_label": labels.get(q.variant_group)} for q in plan["sources"]],
+            "skipped": plan["skipped"],
+            "max_sources": aigen.MAX_SOURCES, "max_per": aigen.MAX_PER, "pack": aigen.PACK,
+        }
+
+    def variant_rows(body: VariantRunIn, session: Session) -> list[dict]:
+        try:
+            packs = aigen.variant_packs(session, body.codes, body.per)
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+        notes = (body.notes or "").strip() or None
+        return [{**p, "notes": notes} for p in packs]
+
+    @app.post("/api/gen/variants/prompts", dependencies=[STAFF])
+    def variant_prompts(body: VariantRunIn, session: Session = S):
+        """Prompt dán tay, mỗi phần là một gói câu gốc."""
+        out = []
+        for p in variant_rows(body, session):
+            system, user = aigen.build_prompt(session, p)
+            out.append({"codes": p["variants_of"], "count": p["count"],
+                        "combined": aigen.combined_prompt(system, user)})
+        return {"parts": out}
+
+    @app.post("/api/gen/variants/check", dependencies=[STAFF])
+    def variant_check(body: VariantRunIn, session: Session = S):
+        rows = variant_rows(body, session)
+        if len(rows) != 1:
+            raise HTTPException(422, "mỗi lần kiểm tra đúng một phần (một prompt)")
+        try:
+            items = aigen.check_output(session, rows[0], body.output or "")
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+        for it in items:
+            it.pop("parsed")
+        return items
+
+    @app.post("/api/gen/variants/batches", status_code=201)
+    def variant_batches(body: VariantRunIn, user: User = STAFF, session: Session = S):
+        """Đợt sinh biến thể: mỗi gói câu gốc một lần sinh, chung mã đợt."""
+        notes = (body.notes or "").strip() or None
+        try:
+            batches = aigen.create_variant_group(session, body.codes, body.per, body.mode, body.output,
+                                                 user_id=user.id, username=user.username, group_id=body.group_id,
+                                                 notes=notes)
         except aigen.GenError as e:
             session.rollback()
             raise HTTPException(422, str(e))

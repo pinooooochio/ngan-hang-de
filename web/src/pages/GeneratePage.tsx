@@ -256,7 +256,13 @@ export default function GeneratePage() {
 
   return (
     <div className="generate">
-      <h2>Sinh câu hỏi bằng AI</h2>
+      <div className="editor-head">
+        <h2>Sinh câu hỏi bằng AI</h2>
+        <span className="spacer" />
+        <Link className="button" to="/sinh/bien-the" title="Sinh câu cùng dạng, khác số liệu cho nhiều câu đã duyệt">
+          Sinh biến thể hàng loạt
+        </Link>
+      </div>
       <p className="hint">
         Bấm các ô còn thiếu trong bảng để đưa vào danh sách sinh (mỗi ô chỉnh riêng dạng, loại câu, số câu), sinh bằng Claude, rồi đọc lại và duyệt. Câu sinh ra luôn vào ngân hàng ở trạng thái
         nháp, chưa dùng để ra đề cho tới khi được duyệt.
@@ -620,7 +626,8 @@ export function GenItems({ items }: { items: GenItem[] }) {
                 {it.code}
               </Link>
             )}
-            {it.duplicate_of && <span className="muted small">trùng câu {it.duplicate_of}</span>}
+            {it.duplicate_of && <span className="muted small">trùng {/^[A-Z0-9-]+$/.test(it.duplicate_of) ? `câu ${it.duplicate_of}` : it.duplicate_of}</span>}
+            {it.variant_of && <span className="badge variant-of">biến thể của {it.variant_of}</span>}
             {it.answer_checked && !it.answer_errors?.length && (
               <span className="badge approved" title="Máy chủ đã tính lại đáp án theo dòng @kiemtra và thấy khớp">
                 Đáp án đã tự kiểm

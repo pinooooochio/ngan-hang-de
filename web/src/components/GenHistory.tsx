@@ -121,6 +121,8 @@ function BatchTable({ batches, showTopic = false }: { batches: GenBatch[]; showT
                 {levelLabel(b.params.level)} · {typeLabel(b.params.type)} · {b.params.count} câu
                 {b.params.dang && <> · {b.params.dang}</>}
                 {b.params.figure && <> · có hình</>}
+                {b.params.variants_of && <> · biến thể của {b.params.variants_of.join(", ")}</>}
+                {b.params.variant_of && <> · biến thể của {b.params.variant_of}</>}
               </div>
             </td>
             <td>

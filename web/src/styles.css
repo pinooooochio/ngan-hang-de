@@ -1576,3 +1576,15 @@ button.badge.variant:hover {
 .picker-defaults {
   flex-wrap: wrap;
 }
+.badge.variant-of {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.variant-plan .variant-stem {
+  max-width: 560px;
+  font-size: 14px;
+}
+.table-wrap {
+  max-height: 520px;
+  overflow: auto;
+}
