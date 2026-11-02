@@ -1588,3 +1588,22 @@ button.badge.variant:hover {
   max-height: 520px;
   overflow: auto;
 }
+.badge.param {
+  background: #e8f0fe;
+  color: #1a56c4;
+}
+.param-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.param-preview .param-sample {
+  margin: 0;
+}
+.param-preview .param-sample .card-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+details.hint summary {
+  cursor: pointer;
+}

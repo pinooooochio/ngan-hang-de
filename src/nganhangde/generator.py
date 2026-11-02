@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from . import params
 from .bank import find_questions
 from .models import AttemptItem, Exam, ExamItem, ExamVariant, Level, Question, QuestionType
 
@@ -189,7 +190,23 @@ def permute_choices(q: Question, rng: random.Random, target: int | None = None) 
     return [p for p in perm if p is not None]
 
 
-def snapshot(q: Question, perm: list[int] | None) -> dict:
+def snapshot(q: Question, perm: list[int] | None, rng: random.Random | None = None) -> dict:
+    """Nội dung câu lúc ra đề. Câu tham số thì bốc một bộ số (theo `rng`) và thay vào."""
+    if q.params:
+        inst = params.instantiate_question(q, rng or random.Random())
+        choices = [{"content": c, "correct": ok} for c, ok, _ in inst.choices]
+        if perm is not None:
+            choices = [choices[i] for i in perm]
+        return {
+            "code": q.code,
+            "type": q.type.value,
+            "level": q.level.value if q.level else None,
+            "stem": inst.stem,
+            "choices": choices,
+            "short_answer": inst.short_answer,
+            "solution": inst.solution,
+            "values": inst.values_text(),
+        }
     choices = list(q.choices)
     if perm is not None:
         choices = [choices[i] for i in perm]
@@ -235,11 +252,11 @@ def make_variant(spec: dict, sections: list[list[Question]], code: str) -> tuple
             targets = balanced_targets(len(qs), fixed, rng)
             for q, t in zip(qs, targets):
                 perm = permute_choices(q, rng, LETTERS.index(t) if t else None)
-                items.append(snapshot(q, perm))
+                items.append(snapshot(q, perm, rng))
         elif qtype == QuestionType.TRUE_FALSE:
-            items = [snapshot(q, permute_choices(q, rng)) for q in qs]
+            items = [snapshot(q, permute_choices(q, rng), rng) for q in qs]
         else:
-            items = [snapshot(q, None) for q in qs]
+            items = [snapshot(q, None, rng) for q in qs]
         out_sections.append({"name": sec.get("name", ""), "type": qtype.value, "points": sec.get("points"), "questions": items})
         keys.append([key_for(it) for it in items])
     data = {

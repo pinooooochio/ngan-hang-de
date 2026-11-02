@@ -581,6 +581,8 @@ def plan_variants(session: Session, questions: list[Question], computational_onl
         seen.add(q.id)
         if q.status != Status.APPROVED:
             skipped.append({"code": q.code, "reason": "chưa duyệt"})
+        elif q.params:
+            skipped.append({"code": q.code, "reason": "câu tham số (đã tự đổi số mỗi lần ra đề)"})
         elif not q.tags:
             skipped.append({"code": q.code, "reason": "chưa gắn thẻ lớp / chủ đề"})
         elif computational_only and q.type in (QuestionType.ESSAY, QuestionType.TRUE_FALSE):

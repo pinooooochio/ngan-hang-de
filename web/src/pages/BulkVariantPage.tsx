@@ -301,7 +301,7 @@ export default function BulkVariantPage() {
                         )}
                       </td>
                       <td className="variant-stem">
-                        <Tex source={q.stem} />
+                        <Tex source={q.sample?.stem ?? q.stem} />
                       </td>
                     </tr>
                   ))}

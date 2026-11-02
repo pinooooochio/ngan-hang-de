@@ -16,6 +16,8 @@ def question_to_ex(q: Question) -> str:
     if q.source:
         meta.append(f"@source: {q.source}")
     lines = ["% " + " ; ".join(meta)]
+    if q.params:
+        lines += q.params.splitlines()
     lines.append("\\begin{ex}" + (f"%[{q.ex_id}]" if q.ex_id else ""))
     lines.append(indent(q.stem_latex))
     if q.type in (QuestionType.MCQ, QuestionType.TRUE_FALSE):

@@ -423,7 +423,7 @@ export default function ExamNewPage() {
               {s.ids.map((code) => (
                 <div key={code} className="picked-item">
                   <span className="code">{code}</span>
-                  <span className="picked-stem">{picked[code] ? <Tex source={picked[code].stem} inline /> : null}</span>
+                  <span className="picked-stem">{picked[code] ? <Tex source={picked[code].sample?.stem ?? picked[code].stem} inline /> : null}</span>
                   <button className="link" onClick={() => updateSection(i, { ids: s.ids.filter((c) => c !== code) })}>
                     Bỏ
                   </button>
@@ -506,7 +506,7 @@ function QuestionPicker({
         .map((it) => (
           <div key={it.code} className="picker-item" onClick={() => onPick(it)}>
             <span className="code">{it.code}</span>
-            <Tex source={it.stem} inline />
+            <Tex source={it.sample?.stem ?? it.stem} inline />
           </div>
         ))}
       {items.length === 0 && <div className="muted">Không có câu {typeLabel(type).toLowerCase()} đã duyệt nào khớp.</div>}
