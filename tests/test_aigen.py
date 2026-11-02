@@ -431,3 +431,79 @@ def test_old_variant_groups_are_migrated(app):
         g = bank.get_group(s, s.query(Question).filter_by(code="12V-001").one().variant_group)
         assert g.origin_code == "12V-001" and bank.group_size(s, g.code) == 3
         assert bank.migrate_groups(s) == 0
+
+
+BULK = r"""% @bienthe: 12V-001
+% @dang-bien-the: Tích vô hướng từ toạ độ
+% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: NB
+% @kiemtra: 4*1 + 1*2 + 0*1 = 6
+\begin{ex}
+  Trong không gian $Oxyz$, cho $\vec u=(4;1;0)$ và $\vec v=(1;2;1)$. Tích vô hướng $\vec u\cdot\vec v$ bằng
+  \choice{$5$}{\True $6$}{$7$}{$8$}
+  \loigiai{$4+2+0=6$.}
+\end{ex}
+
+% @bienthe: 12V-001
+% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: NB
+\begin{ex}
+  Trong $Oxyz$, với $\vec u=(1;2;-1)$, $\vec v=(2;0;1)$, giá trị $\vec u\cdot\vec v$ là
+  \choice{$0$}{\True $1$}{$2$}{$3$}
+  \loigiai{Trùng số liệu câu gốc.}
+\end{ex}
+
+% @bienthe: 12V-004
+% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: TH
+\begin{ex}
+  Trong không gian $Oxyz$, cho $\vec a=(2;m;1)$ và $\vec b=(1;-1;3)$. Giá trị của $m$ để $\vec a\perp\vec b$ là
+  \choice{\True $m=5$}{$m=-5$}{$m=1$}{$m=0$}
+  \loigiai{$2-m+3=0 \Leftrightarrow m=5$.}
+\end{ex}
+
+% @bienthe: 12V-999
+\begin{ex}
+  Câu ghi sai mã câu gốc. \choice{\True $1$}{$2$}{$3$}{$4$}
+  \loigiai{.}
+\end{ex}
+"""
+
+
+def test_bulk_variants_plan_prompt_and_save(app):
+    c = app.state.client
+    make_group(c)
+    plan = c.post("/api/gen/variants/plan", json={"tag": "lop-12/vecto-trong-khong-gian/tich-vo-huong"}).json()
+    codes = [s["code"] for s in plan["sources"]]
+    assert "12V-001" in codes and "12V-004" in codes
+    # biến thể của 12V-001 cùng nhóm nên bị bỏ qua, chỉ câu gốc làm đại diện
+    assert any("cùng nhóm" in s["reason"] for s in plan["skipped"])
+    by_exam = c.post("/api/gen/variants/plan", json={"codes": ["12V-001", "12V-004"], "levels": ["TH"]}).json()
+    assert [s["code"] for s in by_exam["sources"]] == ["12V-004"]
+
+    body = {"codes": ["12V-001", "12V-004"], "per": 2}
+    parts = c.post("/api/gen/variants/prompts", json=body).json()["parts"]
+    assert len(parts) == 1 and parts[0]["count"] == 4
+    assert "% @bienthe: 12V-004" in parts[0]["combined"] and "@dang-bien-the" in parts[0]["combined"]
+    # nhiều câu gốc khác thẻ hoặc vượt gói thì chia nhiều phần
+    many = c.post("/api/gen/variants/prompts", json={"codes": ["12V-001", "12V-002", "12V-004"], "per": 10}).json()
+    assert [p["codes"] for p in many["parts"]] == [["12V-001", "12V-004"], ["12V-002"]]
+
+    items = c.post("/api/gen/variants/check", json={**body, "output": BULK}).json()
+    assert [it["state"] for it in items] == ["new", "duplicate", "new", "error"]
+    assert items[0]["variant_of"] == "12V-001" and items[2]["variant_of"] == "12V-004"
+    assert any("@bienthe" in e for e in items[3]["errors"])
+
+    g = c.post("/api/gen/variants/batches", json={**body, "mode": "manual", "output": BULK}).json()
+    assert len(g["batches"]) == 1 and g["batches"][0]["n_added"] == 2
+    q1 = c.get("/api/questions/12V-001").json()
+    q4 = c.get("/api/questions/12V-004").json()
+    assert q1["n_variants"] == 4 and q1["variant_label"] == "Tích vô hướng từ toạ độ"
+    assert q4["n_variants"] == 2 and q4["variant_group"] != q1["variant_group"]
+    # câu nháp không làm câu gốc được
+    assert c.post("/api/gen/variants/prompts", json={"codes": [q4["variants"][1]["code"]], "per": 2}).status_code == 422
+
+
+def test_bulk_variants_api_mode_one_batch_per_pack(app, monkeypatch):
+    c = app.state.client
+    monkeypatch.setattr(aigen, "CALLER", lambda s, u, m: ("", {"input_tokens": 1, "output_tokens": 1}))
+    g = c.post("/api/gen/variants/batches", json={"codes": ["12V-001", "12V-002", "12V-004"], "per": 10}).json()
+    assert len(g["batches"]) == 2 and len({b["group_id"] for b in g["batches"]}) == 1
+    assert g["batches"][0]["params"]["variants_of"] == ["12V-001", "12V-004"]

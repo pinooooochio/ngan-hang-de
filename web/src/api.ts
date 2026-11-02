@@ -298,6 +298,23 @@ export interface GenParams {
   figure?: boolean;
   /** Mã câu gốc khi sinh biến thể. */
   variant_of?: string;
+  /** Sinh biến thể hàng loạt: các câu gốc của lần sinh, mỗi câu `per` biến thể. */
+  variants_of?: string[] | null;
+  per?: number | null;
+}
+
+export interface VariantPlan {
+  sources: QuestionSummary[];
+  skipped: { code: string; reason: string }[];
+  max_sources: number;
+  max_per: number;
+  pack: number;
+}
+
+export interface VariantRun {
+  codes: string[];
+  per: number;
+  notes?: string;
 }
 
 export interface GenItem {
@@ -315,6 +332,8 @@ export interface GenItem {
   answer_errors?: string[];
   /** Có dòng @kiemtra và đã tính lại. */
   answer_checked?: boolean;
+  /** Câu gốc của biến thể. */
+  variant_of?: string | null;
   duplicate_of: string | null;
   code: string | null;
 }
@@ -605,6 +624,19 @@ export const api = {
   genCheckMulti: (rows: GenParams[], output: string) => request<GenMultiCheck>("POST", "/api/gen/check/multi", { rows, output }),
   genCreateMulti: (rows: GenParams[], mode: "api" | "manual", output?: string, group_id?: string) =>
     request<{ group_id: string; batches: GenBatch[] }>("POST", "/api/gen/batches/multi", { rows, mode, output, group_id }),
+  variantPlan: (body: {
+    tag?: string;
+    levels?: Level[];
+    types?: QType[];
+    exam_id?: number;
+    codes?: string[];
+    computational_only?: boolean;
+  }) => request<VariantPlan>("POST", "/api/gen/variants/plan", body),
+  variantPrompts: (body: VariantRun) =>
+    request<{ parts: { codes: string[]; count: number; combined: string }[] }>("POST", "/api/gen/variants/prompts", body),
+  variantCheck: (body: VariantRun, output: string) => request<GenItem[]>("POST", "/api/gen/variants/check", { ...body, output }),
+  variantBatches: (body: VariantRun, mode: "api" | "manual", output?: string, group_id?: string) =>
+    request<{ group_id: string; batches: GenBatch[] }>("POST", "/api/gen/variants/batches", { ...body, mode, output, group_id }),
   genBatch: (id: number) => request<GenBatchDetail>("GET", `/api/gen/batches/${id}`),
   genRetry: (id: number) => request<GenBatchDetail>("POST", `/api/gen/batches/${id}/retry`),
   backupInfo: () => request<BackupInfo>("GET", "/api/backup/info"),

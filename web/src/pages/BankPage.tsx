@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { PICKED_KEY } from "./BulkVariantPage";
 import {
   api,
   LEVELS,
@@ -40,6 +41,15 @@ export default function BankPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [group, setGroup] = useState<VariantGroup | null>(null);
+  const navigate = useNavigate();
+  const variantSelected = () => {
+    try {
+      sessionStorage.setItem(PICKED_KEY, JSON.stringify([...selected]));
+    } catch {
+      /* không lưu được: trang sinh biến thể sẽ không có câu đã chọn */
+    }
+    navigate("/sinh/bien-the?chon=1");
+  };
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -242,6 +252,7 @@ export default function BankPage() {
             onApply={bulk}
             onDelete={remove}
             onMerge={mergeSelected}
+            onVariants={variantSelected}
             onClear={() => setSelected(new Set())}
           />
         )}
@@ -370,11 +381,13 @@ function BulkBar({
   onApply,
   onDelete,
   onMerge,
+  onVariants,
   onClear,
   admin,
 }: {
   admin: boolean;
   onMerge: () => void;
+  onVariants: () => void;
   count: number;
   tags: TagNode[];
   onApply: (body: { add_tag?: string; set_tag?: string; level?: Level; status?: Status }) => void;
@@ -405,6 +418,9 @@ function BulkBar({
           </option>
         ))}
       </select>
+      <button onClick={onVariants} title="Sinh câu cùng dạng, khác số liệu cho các câu đã chọn (chỉ câu đã duyệt)">
+        Sinh biến thể
+      </button>
       {count > 1 && (
         <button onClick={onMerge} title="Các câu cùng dạng, chỉ khác số liệu: mỗi đề sẽ chỉ lấy một câu của nhóm">
           Gộp thành nhóm biến thể
