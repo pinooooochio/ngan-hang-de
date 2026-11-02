@@ -284,6 +284,7 @@ class GenerationBatch(Base):
     # người tạo lần sinh (như nhật ký sửa câu: giữ tên kể cả khi tài khoản bị xoá)
     user_id: Mapped[int | None] = mapped_column(Integer)
     username: Mapped[str | None] = mapped_column(String(100))
+    group_id: Mapped[str | None] = mapped_column(String(32), index=True)  # mã đợt khi sinh nhiều ô một lần
 
     @property
     def source(self) -> str:

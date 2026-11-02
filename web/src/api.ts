@@ -247,6 +247,7 @@ export interface Curriculum {
   api: boolean;
   model: string;
   max_count: number;
+  max_total: number;
 }
 
 export interface CoverageTopic {
@@ -286,6 +287,12 @@ export interface GenItem {
   code: string | null;
 }
 
+/** Kiểm tra kết quả dán tay của một đợt nhiều ô. */
+export interface GenMultiCheck {
+  rows: GenItem[][];
+  unmatched: { index: number; stem: string; tags: string[][]; level: Level | null; type: QType }[];
+}
+
 export interface FigureResult {
   id: string;
   ok: boolean;
@@ -310,6 +317,7 @@ export interface GenBatch {
   n_pending?: number;
   user_id: number | null;
   username: string | null;
+  group_id: string | null;
 }
 
 export interface GenBatchDetail extends GenBatch {
@@ -549,6 +557,11 @@ export const api = {
   genCreate: (params: GenParams, mode: "api" | "manual", output?: string) =>
     request<GenBatchDetail>("POST", "/api/gen/batches", { params, mode, output }),
   genBatches: () => request<GenBatch[]>("GET", "/api/gen/batches"),
+  genPromptMulti: (rows: GenParams[]) =>
+    request<{ system: string; user: string; combined: string }>("POST", "/api/gen/prompt/multi", { rows }),
+  genCheckMulti: (rows: GenParams[], output: string) => request<GenMultiCheck>("POST", "/api/gen/check/multi", { rows, output }),
+  genCreateMulti: (rows: GenParams[], mode: "api" | "manual", output?: string) =>
+    request<{ group_id: string; batches: GenBatch[] }>("POST", "/api/gen/batches/multi", { rows, mode, output }),
   genBatch: (id: number) => request<GenBatchDetail>("GET", `/api/gen/batches/${id}`),
   genRetry: (id: number) => request<GenBatchDetail>("POST", `/api/gen/batches/${id}/retry`),
   backupInfo: () => request<BackupInfo>("GET", "/api/backup/info"),

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 import tomllib
 from datetime import datetime
@@ -36,13 +37,14 @@ from .models import (
     Status,
     TaxonomyNode,
 )
-from .parser import ParsedQuestion, parse_text, slugify
+from .parser import ParsedQuestion, parse_text, slugify, split_blocks
 
 log = logging.getLogger(__name__)
 
 TEMPLATES = Path(__file__).parent / "templates"
 DEFAULT_MODEL = "claude-opus-5-5"
 MAX_COUNT = 30  # số câu tối đa mỗi lần sinh, để kết quả không quá dài
+MAX_TOTAL = 60  # tổng số câu tối đa của một đợt sinh nhiều ô
 LEVEL_ORDER = [Level.NB, Level.TH, Level.VD, Level.VDC]
 
 
@@ -532,7 +534,8 @@ def import_batch(session: Session, batch: GenerationBatch, text: str) -> None:
 
 
 def create_batch(session: Session, params: dict, mode: str, output: str | None = None,
-                 user_id: int | None = None, username: str | None = None) -> GenerationBatch:
+                 user_id: int | None = None, username: str | None = None,
+                 group_id: str | None = None) -> GenerationBatch:
     p = normalize_params(params)
     system, user = build_prompt(session, p)
     batch = GenerationBatch(
@@ -545,6 +548,7 @@ def create_batch(session: Session, params: dict, mode: str, output: str | None =
         items=[],
         user_id=user_id,
         username=username,
+        group_id=group_id,
     )
     session.add(batch)
     session.flush()
@@ -557,6 +561,119 @@ def create_batch(session: Session, params: dict, mode: str, output: str | None =
             raise GenError("máy chủ chưa có ANTHROPIC_API_KEY, hãy dùng cách chép prompt")
         session.commit()
     return batch
+
+
+# ---------- Sinh nhiều ô trong một đợt ----------
+# Mỗi ô (chủ đề × dạng × mức độ × loại câu × số câu) là một lần sinh riêng, các lần cùng đợt có chung
+# `group_id`. Gọi Claude API thì mỗi ô một yêu cầu (prompt ngắn, ô lỗi chạy lại riêng); chép prompt thì
+# gộp thành một prompt, kết quả dán lại được chia về từng ô theo dòng @tags và @level của từng câu.
+
+
+def normalize_rows(rows: list[dict]) -> list[dict]:
+    if not rows:
+        raise GenError("chưa chọn ô nào để sinh")
+    out = [normalize_params(r) for r in rows]
+    total = sum(r["count"] for r in out)
+    if total > MAX_TOTAL:
+        raise GenError(f"mỗi đợt tối đa {MAX_TOTAL} câu (đang chọn {total} câu)")
+    return out
+
+
+def build_multi_prompt(session: Session, rows: list[dict]) -> tuple[str, str]:
+    """Prompt gộp cho nhiều ô (cách chép prompt sang Claude)."""
+    rows = normalize_rows(rows)
+    if len(rows) == 1:
+        return build_prompt(session, rows[0])
+    total = sum(r["count"] for r in rows)
+    parts = [f"Lần này cần soạn tổng cộng {total} câu cho {len(rows)} ô khác nhau, lần lượt từng ô. "
+             "Mỗi câu ghi đúng dòng @tags và @level của ô nó thuộc về."]
+    for i, r in enumerate(rows, 1):
+        # ít câu mẫu hơn để prompt gộp không quá dài; bỏ dòng kết của từng ô
+        _, user = build_prompt(session, r, n_examples=1, n_avoid=20)
+        parts.append(f"## Ô {i}\n\n" + user.rsplit("\n\n", 1)[0])
+    counts = " + ".join(str(r["count"]) for r in rows)
+    parts.append(f"Trả về đúng {total} khối câu hỏi ({counts} theo thứ tự các ô), không kèm lời dẫn.")
+    return SYSTEM_PROMPT, "\n\n".join(parts)
+
+
+def _row_of(pq: ParsedQuestion, rows: list[dict]) -> int | None:
+    """Ô của một câu trong kết quả gộp: cùng loại câu, cùng mức độ, dòng thẻ thuộc chủ đề của ô;
+    nhiều ô cùng chủ đề thì xét thêm dạng bài."""
+    def matches(r: dict, check_level: bool) -> bool:
+        if pq.type != QuestionType(r["type"]) or (check_level and pq.level != Level(r["level"])):
+            return False
+        base = [slugify(x) for x in topic_names(r["grade"], r["topic"])]
+        return any([slugify(x) for x in t[: len(base)]] == base for t in pq.tags)
+
+    for check_level in (True, False):  # thiếu hoặc sai @level thì chỉ xét chủ đề và loại câu
+        cands = [i for i, r in enumerate(rows) if matches(r, check_level)]
+        if cands:
+            for i in cands:
+                dang = rows[i]["dang"]
+                if dang and any(slugify(dang) in [slugify(x) for x in t] for t in pq.tags):
+                    return i
+            return cands[0]
+    return None
+
+
+def route_output(rows: list[dict], text: str) -> tuple[list[str], list[dict]]:
+    """Chia kết quả gộp về từng ô. Trả về (văn bản của từng ô, các câu không xếp được vào ô nào)."""
+    texts: list[list[str]] = [[] for _ in rows]
+    unmatched = []
+    for n, chunk in enumerate(split_blocks(strip_fences(text)), 1):
+        if len(rows) == 1:
+            texts[0].append(chunk)
+            continue
+        pq = parse_text(chunk)[0]
+        i = _row_of(pq, rows)
+        if i is None:
+            unmatched.append({"index": n, "stem": _short(pq.stem, 160), "tags": pq.tags,
+                              "level": pq.level.value if pq.level else None, "type": pq.type.value})
+        else:
+            texts[i].append(chunk)
+    return ["\n".join(t) for t in texts], unmatched
+
+
+def check_multi(session: Session, rows: list[dict], text: str) -> dict:
+    rows = normalize_rows(rows)
+    texts, unmatched = route_output(rows, text)
+    out = []
+    for r, t in zip(rows, texts):
+        items = check_output(session, r, t) if t else []
+        for it in items:
+            it.pop("parsed")
+        out.append(items)
+    return {"rows": out, "unmatched": unmatched}
+
+
+def create_group(session: Session, rows: list[dict], mode: str, output: str | None = None,
+                 user_id: int | None = None, username: str | None = None) -> list[GenerationBatch]:
+    """Tạo một đợt sinh: mỗi ô một lần sinh, chung mã đợt."""
+    rows = normalize_rows(rows)
+    group = uuid.uuid4().hex[:10]
+    if mode == "manual":
+        if not (output or "").strip():
+            raise GenError("chưa dán kết quả")
+        texts, unmatched = route_output(rows, output)
+        if not any(texts):
+            raise GenError("không có câu nào khớp với các ô đã chọn")
+    else:
+        texts = [None] * len(rows)
+    batches = []
+    for r, t in zip(rows, texts):
+        if mode == "manual" and not t:
+            # ô không nhận được câu nào: vẫn ghi lại để thấy ô bị thiếu
+            system, user = build_prompt(session, r)
+            b = GenerationBatch(mode=mode, status=BuildStatus.FAILED, params=r, system_prompt=system,
+                                user_prompt=user, items=[], user_id=user_id, username=username, group_id=group,
+                                error="kết quả dán vào không có câu nào cho ô này", finished_at=datetime.now())
+            session.add(b)
+            session.commit()
+        else:
+            b = create_batch(session, r, mode, t, user_id=user_id, username=username, group_id=group)
+        batches.append(b)
+    session.commit()
+    return batches
 
 
 # ---------- Gọi Claude API ----------

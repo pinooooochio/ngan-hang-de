@@ -342,7 +342,9 @@ def question_query(
     if status:
         stmt = stmt.where(Question.status == status)
     if source:
-        stmt = stmt.where(Question.source == source)
+        # nhiều nguồn ngăn bởi "|" (ví dụ các lần sinh của một đợt: "AI #3|AI #4")
+        sources = [s for s in source.split("|") if s]
+        stmt = stmt.where(Question.source.in_(sources) if len(sources) > 1 else Question.source == source)
     if text:
         like = f"%{text}%"
         stmt = stmt.where(

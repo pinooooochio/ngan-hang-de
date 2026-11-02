@@ -324,6 +324,19 @@ class GenCheckIn(BaseModel):
     output: str
 
 
+class GenRowsIn(BaseModel):
+    rows: list[GenParamsIn] = Field(min_length=1, max_length=40)
+
+
+class GenMultiCheckIn(GenRowsIn):
+    output: str
+
+
+class GenMultiIn(GenRowsIn):
+    mode: str = Field("api", pattern="^(api|manual)$")
+    output: str | None = None
+
+
 class GenBatchIn(BaseModel):
     params: GenParamsIn
     mode: str = Field("api", pattern="^(api|manual)$")
@@ -336,6 +349,7 @@ def batch_json(b: GenerationBatch, full: bool = False, n_pending: int | None = N
         "id": b.id,
         "user_id": b.user_id,
         "username": b.username,
+        "group_id": b.group_id,
         "mode": b.mode,
         "status": b.status.value,
         "params": b.params,
@@ -1208,7 +1222,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     @app.get("/api/gen/curriculum", dependencies=[STAFF])
     def gen_curriculum():
         return {"grades": aigen.load_curriculum(), "api": aigen.api_available(), "model": aigen.model_name(),
-                "max_count": aigen.MAX_COUNT}
+                "max_count": aigen.MAX_COUNT, "max_total": aigen.MAX_TOTAL}
 
     @app.get("/api/gen/coverage", dependencies=[STAFF])
     def gen_coverage(grade: str, session: Session = S):
@@ -1231,6 +1245,36 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         for it in items:
             it.pop("parsed")
         return items
+
+    def rows_of(body: GenRowsIn) -> list[dict]:
+        return [r.model_dump(mode="json") for r in body.rows]
+
+    @app.post("/api/gen/prompt/multi", dependencies=[STAFF])
+    def gen_prompt_multi(body: GenRowsIn, session: Session = S):
+        """Prompt gộp nhiều ô để chép sang Claude."""
+        try:
+            system, user = aigen.build_multi_prompt(session, rows_of(body))
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+        return {"system": system, "user": user, "combined": aigen.combined_prompt(system, user)}
+
+    @app.post("/api/gen/check/multi", dependencies=[STAFF])
+    def gen_check_multi(body: GenMultiCheckIn, session: Session = S):
+        try:
+            return aigen.check_multi(session, rows_of(body), body.output)
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+
+    @app.post("/api/gen/batches/multi", status_code=201)
+    def gen_create_multi(body: GenMultiIn, user: User = STAFF, session: Session = S):
+        """Một đợt sinh nhiều ô: mỗi ô một lần sinh, chung mã đợt."""
+        try:
+            batches = aigen.create_group(session, rows_of(body), body.mode, body.output,
+                                         user_id=user.id, username=user.username)
+        except aigen.GenError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        return {"group_id": batches[0].group_id, "batches": [batch_json(b) for b in batches]}
 
     @app.post("/api/gen/batches", status_code=201)
     def gen_create(body: GenBatchIn, user: User = STAFF, session: Session = S):
