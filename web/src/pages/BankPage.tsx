@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, LEVELS, levelLabel, TYPES, typeLabel, type Level, type QuestionSummary, type Status, type TagNode } from "../api";
+import {
+  api,
+  LEVELS,
+  levelLabel,
+  TYPES,
+  typeLabel,
+  type Level,
+  type QuestionSummary,
+  type Status,
+  type TagNode,
+  type VariantGroup,
+} from "../api";
 import TagTree from "../components/TagTree";
 import { useAuth } from "../auth";
 import Tex from "../components/Tex";
@@ -28,6 +39,7 @@ export default function BankPage() {
   const [search, setSearch] = useState(filters.q);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [group, setGroup] = useState<VariantGroup | null>(null);
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -81,6 +93,39 @@ export default function BankPage() {
     load();
     setSelected(new Set());
   }, [load]);
+
+  // Đang lọc theo nhóm biến thể: tải mô tả dạng và câu gốc của nhóm
+  useEffect(() => {
+    if (!filters.group) return setGroup(null);
+    api.variantGroup(filters.group).then(setGroup).catch(() => setGroup(null));
+  }, [filters.group, items]);
+
+  const editLabel = async () => {
+    if (!group) return;
+    const label = window.prompt("Mô tả dạng bài của nhóm (ví dụ: Độ dài vectơ từ toạ độ)", group.label ?? "");
+    if (label === null) return;
+    try {
+      setGroup({ ...group, ...(await api.labelGroup(group.code, label)) });
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
+  const mergeSelected = async () => {
+    const label = window.prompt(
+      `Gộp ${selected.size} câu thành một nhóm biến thể (các câu cùng dạng, khác số liệu). Mô tả dạng bài (có thể để trống):`,
+      "",
+    );
+    if (label === null) return;
+    try {
+      const g = await api.mergeGroup([...selected], label || undefined);
+      setMessage(`Đã gộp vào nhóm ${g.code} (${g.n} câu).`);
+      setSelected(new Set());
+      await load();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
 
   const toggle = (code: string) => {
     const next = new Set(selected);
@@ -190,7 +235,15 @@ export default function BankPage() {
           </div>
         )}
         {selected.size > 0 && (
-          <BulkBar admin={me.role === "admin"} count={selected.size} tags={tags} onApply={bulk} onDelete={remove} onClear={() => setSelected(new Set())} />
+          <BulkBar
+            admin={me.role === "admin"}
+            count={selected.size}
+            tags={tags}
+            onApply={bulk}
+            onDelete={remove}
+            onMerge={mergeSelected}
+            onClear={() => setSelected(new Set())}
+          />
         )}
 
         <div className="result-count">
@@ -217,14 +270,20 @@ export default function BankPage() {
           )}
           {filters.group && (
             <span className="tag">
-              Nhóm biến thể {filters.group}{" "}
+              Nhóm biến thể {filters.group}
+              {group?.label && <> · {group.label}</>}{" "}
               <button className="link" onClick={() => setFilter("nhom", "")}>
                 ✕
               </button>
             </span>
           )}
-          {filters.group && (
-            <Link className="small" to={`/sinh/bien-the/${encodeURIComponent(filters.group)}`}>
+          {group && (
+            <button className="link small" onClick={editLabel}>
+              {group.label ? "Sửa mô tả dạng" : "Thêm mô tả dạng"}
+            </button>
+          )}
+          {group?.origin_code && (
+            <Link className="small" to={`/sinh/bien-the/${encodeURIComponent(group.origin_code)}`}>
               Sinh thêm biến thể
             </Link>
           )}
@@ -256,7 +315,7 @@ export default function BankPage() {
               {q.variant_group && (q.n_variants ?? 1) > 1 && !filters.group && (
                 <button
                   className="badge variant"
-                  title="Các câu cùng dạng, khác số liệu. Mỗi đề chỉ lấy một câu của nhóm."
+                  title={`${q.variant_label ? q.variant_label + ". " : ""}Các câu cùng dạng, khác số liệu. Mỗi đề chỉ lấy một câu của nhóm.`}
                   onClick={() => setFilter("nhom", q.variant_group!)}
                 >
                   Nhóm biến thể · {q.n_variants}
@@ -310,10 +369,12 @@ function BulkBar({
   tags,
   onApply,
   onDelete,
+  onMerge,
   onClear,
   admin,
 }: {
   admin: boolean;
+  onMerge: () => void;
   count: number;
   tags: TagNode[];
   onApply: (body: { add_tag?: string; set_tag?: string; level?: Level; status?: Status }) => void;
@@ -344,6 +405,11 @@ function BulkBar({
           </option>
         ))}
       </select>
+      {count > 1 && (
+        <button onClick={onMerge} title="Các câu cùng dạng, chỉ khác số liệu: mỗi đề sẽ chỉ lấy một câu của nhóm">
+          Gộp thành nhóm biến thể
+        </button>
+      )}
       {admin && (
         <>
           <button onClick={() => onApply({ status: "approved" })}>Duyệt</button>

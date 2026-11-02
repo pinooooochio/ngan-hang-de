@@ -334,17 +334,19 @@ def test_variants_grouped_and_answer_checked(app):
     assert any("khác đáp số" in e for e in bad["answer_errors"])
     # câu gốc và hai biến thể cùng một nhóm; cảnh báo lưu lên câu để người duyệt thấy ở ngân hàng
     q = c.get(f"/api/questions/{bad['code']}").json()
-    assert q["variant_group"] == "12V-001" and q["n_variants"] == 3 and "khác đáp số" in q["check_note"]
+    grp = q["variant_group"]
+    assert grp.startswith("N-") and q["variant_origin"] == "12V-001" and q["n_variants"] == 3
+    assert "khác đáp số" in q["check_note"]
     assert q["tags"][0]["names"] == ["Lớp 12", "Vectơ trong không gian", "Tích vô hướng"]
-    listed = c.get("/api/questions", params={"group": "12V-001"}).json()
+    listed = c.get("/api/questions", params={"group": grp}).json()
     assert listed["total"] == 3 and all(it["n_variants"] == 3 for it in listed["items"])
     # sửa câu thì cảnh báo được xoá
     src = q["ex_source"].replace("Ghi sai đáp án.", "$3+2+0=5$.").replace("{\\True $6$}", "{$6$}").replace("{$5$}", "{\\True $5$}")
     # duyệt cả nhóm bỏ qua câu còn cảnh báo
-    assert c.post("/api/questions/group/12V-001/approve").json() == {"approved": 1, "skipped": [bad["code"]]}
+    assert c.post(f"/api/questions/group/{grp}/approve").json() == {"approved": 1, "skipped": [bad["code"]]}
     q2 = c.put(f"/api/questions/{bad['code']}", json={"source": src}).json()
     assert q2["check_note"] is None
-    assert c.post("/api/questions/group/12V-001/approve").json() == {"approved": 1, "skipped": []}
+    assert c.post(f"/api/questions/group/{grp}/approve").json() == {"approved": 1, "skipped": []}
 
 
 def make_group(c) -> list[str]:
@@ -390,3 +392,42 @@ def test_exam_takes_one_question_per_group_and_reports_unused(app):
         if n - len(group) + 1 >= 2:  # đủ câu ngoài nhóm thì không lấy hai câu cùng nhóm
             assert len(set(codes) & set(group)) <= 1
     assert c.post("/api/exams/availability", json={"sections": [sec]}).json()["sections"][0]["unused"][0] < n
+
+
+def test_variant_group_records(app):
+    c = app.state.client
+    codes = make_group(c)
+    q = c.get("/api/questions/12V-001").json()
+    group = q["variant_group"]
+    assert group.startswith("N-") and q["variant_origin"] == "12V-001" and q["n_variants"] == 3
+    # mô tả dạng
+    assert c.put(f"/api/variant-groups/{group}", json={"label": "Tích vô hướng từ toạ độ"}).json()["label"] == "Tích vô hướng từ toạ độ"
+    listed = c.get("/api/questions", params={"group": group}).json()["items"]
+    assert all(it["variant_label"] == "Tích vô hướng từ toạ độ" for it in listed)
+    # tách câu gốc khỏi nhóm: câu cũ nhất còn lại thành câu gốc
+    assert c.put("/api/questions/12V-001/variant-group", json={"group": None}).json()["variant_group"] is None
+    g = c.get(f"/api/variant-groups/{group}").json()
+    assert g["n"] == 2 and g["origin_code"] == codes[1]
+    # gộp lại: dùng nhóm sẵn có
+    merged = c.post("/api/variant-groups/merge", json={"codes": ["12V-001", codes[1]]}).json()
+    assert merged["code"] == group and merged["n"] == 3
+    # chuyển sang nhóm không tồn tại / khác loại câu thì báo lỗi
+    assert c.put("/api/questions/12V-001/variant-group", json={"group": "N-999999"}).status_code == 422
+    log = c.get("/api/questions/12V-001/log").json()
+    assert any(e["action"] == "nhom" for e in log)
+
+
+def test_old_variant_groups_are_migrated(app):
+    from nganhangde import bank
+    from nganhangde.models import Question
+
+    c = app.state.client
+    codes = make_group(c)
+    with Session(app.state.engine) as s:
+        for q in s.query(Question).filter(Question.code.in_(["12V-001", *codes])):
+            q.variant_group = "12V-001"  # dạng cũ: mã câu gốc
+        s.commit()
+        assert bank.migrate_groups(s) == 1
+        g = bank.get_group(s, s.query(Question).filter_by(code="12V-001").one().variant_group)
+        assert g.origin_code == "12V-001" and bank.group_size(s, g.code) == 3
+        assert bank.migrate_groups(s) == 0

@@ -600,8 +600,7 @@ def import_batch(session: Session, batch: GenerationBatch, text: str) -> None:
         bank._apply(session, q, pq)
         q.check_note = "; ".join(it["figure_errors"] + it["answer_errors"]) or None
         if original is not None:
-            original.variant_group = original.variant_group or original.code
-            q.variant_group = original.variant_group
+            q.variant_group = bank.ensure_group(session, original).code
         session.add(q)
         session.flush()
         it["code"] = q.code
