@@ -146,6 +146,10 @@ Nên cho thư mục `backups` đồng bộ lên Google Drive / OneDrive (hoặc 
   định bật): khi luyện, câu có nhóm được thay bằng biến thể người làm chưa gặp, PDF giữ nguyên. Luyện nhanh ưu tiên
   câu chưa làm; luyện lại câu sai lấy biến thể khác của câu đó.
 
+  Mỗi nhóm có mã cố định (`N-000012`), câu gốc và **mô tả dạng bài** (sửa ở trang câu hoặc khi lọc nhóm ở ngân
+  hàng). Trang sửa câu có **Tách khỏi nhóm** và **Chuyển sang nhóm khác**; ở ngân hàng tick nhiều câu cùng dạng rồi
+  bấm **Gộp thành nhóm biến thể**. Dữ liệu nhóm kiểu cũ được chuyển tự động khi khởi động.
+
   Dòng lệnh: `nhd prompt --lop "Lớp 12" --chu-de "Nguyên hàm và tích phân" --muc TH --loai mcq --so 10` in prompt;
   `nhd sinh ...` (cùng tham số) gọi Claude API và lưu câu nháp.
 

@@ -28,6 +28,7 @@ from .compile import compile_tex, latex_available
 from .db import get_url, upgrade_schema
 from .models import (
     ROLE_NAMES,
+    VariantGroup,
     AnswerRequest,
     Attempt,
     Base,
@@ -64,6 +65,7 @@ LOG_ACTIONS = {
     "xoa": "Xoá",
     "import": "Import",
     "hang-loat": "Sửa hàng loạt",
+    "nhom": "Đổi nhóm biến thể",
 }
 
 
@@ -410,6 +412,29 @@ class PublishIn(BaseModel):
     published: bool
 
 
+class GroupLabelIn(BaseModel):
+    label: str = Field("", max_length=300)
+
+
+class SetGroupIn(BaseModel):
+    group: str | None = None  # None: tách khỏi nhóm
+
+
+class MergeGroupIn(BaseModel):
+    codes: list[str] = Field(min_length=2, max_length=500)
+    label: str | None = Field(None, max_length=300)
+
+
+def group_json(session: Session, g: VariantGroup, members: bool = False) -> dict:
+    data = {"code": g.code, "origin_code": g.origin_code, "label": g.label,
+            "level": g.level.value if g.level else None, "type": g.type.value if g.type else None,
+            "n": bank.group_size(session, g.code)}
+    if members:
+        rows = session.scalars(select(Question).where(Question.variant_group == g.code).order_by(Question.id))
+        data["members"] = [{"code": q.code, "status": q.status.value} for q in rows]
+    return data
+
+
 class VaryIn(BaseModel):
     vary: bool
 
@@ -472,6 +497,8 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     Base.metadata.create_all(engine)
     upgrade_schema(engine)
     SessionLocal = sessionmaker(engine)
+    with SessionLocal() as s:
+        bank.migrate_groups(s)  # nhóm biến thể kiểu cũ (mã câu gốc) sang bảng nhóm
 
     def get_session() -> Iterator[Session]:
         with SessionLocal() as s:
@@ -667,7 +694,11 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             select(Question.variant_group, func.count()).where(Question.variant_group.in_(groups))
             .group_by(Question.variant_group)
         ).all()) if groups else {}
-        items = [{**question_json(r, full=False), "n_variants": sizes.get(r.variant_group, 1)} for r in rows]
+        labels = dict(session.execute(
+            select(VariantGroup.code, VariantGroup.label).where(VariantGroup.code.in_(groups))
+        ).all()) if groups else {}
+        items = [{**question_json(r, full=False), "n_variants": sizes.get(r.variant_group, 1),
+                  "variant_label": labels.get(r.variant_group)} for r in rows]
         return {"total": total, "items": items}
 
     @app.get("/api/questions/codes", dependencies=[STAFF])
@@ -691,8 +722,10 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         if q is None:
             raise HTTPException(404, f"không có câu {code}")
         members = bank.variant_members(session, q)
+        g = bank.get_group(session, q.variant_group)
         return {**question_json(q), "n_variants": len(members),
-                "variants": [{"code": m.code, "status": m.status.value} for m in members]}
+                "variants": [{"code": m.code, "status": m.status.value} for m in members],
+                "variant_label": g.label if g else None, "variant_origin": g.origin_code if g else None}
 
     def check_status(user: User, status: Status | None) -> None:
         if status == Status.APPROVED and user.role != Role.ADMIN:
@@ -742,6 +775,55 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             return aigen.variant_params(session, code, count)
         except aigen.GenError as e:
             raise HTTPException(422, str(e))
+
+    @app.get("/api/variant-groups/{code}", dependencies=[STAFF])
+    def get_variant_group(code: str, session: Session = S):
+        g = bank.get_group(session, code)
+        if g is None:
+            raise HTTPException(404, f"không có nhóm {code}")
+        return group_json(session, g, members=True)
+
+    @app.put("/api/variant-groups/{code}", dependencies=[STAFF])
+    def label_variant_group(code: str, body: GroupLabelIn, session: Session = S):
+        """Sửa mô tả dạng bài của nhóm."""
+        g = bank.get_group(session, code)
+        if g is None:
+            raise HTTPException(404, f"không có nhóm {code}")
+        g.label = body.label.strip() or None
+        session.commit()
+        return group_json(session, g)
+
+    @app.post("/api/variant-groups/merge")
+    def merge_variant_group(body: MergeGroupIn, user: User = STAFF, session: Session = S):
+        """Gộp các câu đã chọn thành một nhóm biến thể."""
+        qs = [bank.get_question(session, c) for c in dict.fromkeys(body.codes)]
+        missing = [c for c, q in zip(dict.fromkeys(body.codes), qs) if q is None]
+        if missing:
+            raise HTTPException(404, f"không có câu {', '.join(missing)}")
+        try:
+            g = bank.merge_group(session, qs, body.label)  # type: ignore[arg-type]
+        except bank.GroupError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        session.commit()
+        log(session, user, [q.code for q in qs], "nhom", f"gộp vào nhóm {g.code}")
+        return group_json(session, g)
+
+    @app.put("/api/questions/{code}/variant-group")
+    def set_question_group(code: str, body: SetGroupIn, user: User = STAFF, session: Session = S):
+        """Chuyển câu sang nhóm khác, hoặc tách khỏi nhóm (group = null)."""
+        q = bank.get_question(session, code)
+        if q is None:
+            raise HTTPException(404, f"không có câu {code}")
+        old = q.variant_group
+        try:
+            g = bank.set_group(session, q, (body.group or "").strip() or None)
+        except bank.GroupError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        session.commit()
+        log(session, user, [q.code], "nhom", f"chuyển sang nhóm {g.code}" if g else f"tách khỏi nhóm {old}")
+        return {"code": q.code, "variant_group": q.variant_group}
 
     @app.post("/api/questions/group/{group}/approve")
     def approve_group(group: str, user: User = ADMIN, session: Session = S):

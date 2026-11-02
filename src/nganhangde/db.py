@@ -20,7 +20,11 @@ def make_session(url: str | None = None) -> Session:
     engine = create_engine(url or get_url())
     Base.metadata.create_all(engine)
     upgrade_schema(engine)
-    return sessionmaker(engine)()
+    session = sessionmaker(engine)()
+    from .bank import migrate_groups
+
+    migrate_groups(session)
+    return session
 
 
 def upgrade_schema(engine: Engine) -> list[str]:

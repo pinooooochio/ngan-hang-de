@@ -52,6 +52,22 @@ class Status(str, enum.Enum):
     APPROVED = "approved"
 
 
+class VariantGroup(Base):
+    """Nhóm biến thể: các câu cùng dạng, cùng cách hỏi, chỉ khác số liệu. Mã nhóm cố định, không đổi
+    khi câu gốc bị xoá hay chuyển nhóm."""
+
+    __tablename__ = "variant_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    origin_code: Mapped[str | None] = mapped_column(String(64))  # câu gốc của nhóm
+    label: Mapped[str | None] = mapped_column(Text)  # mô tả dạng bài, ví dụ "Độ dài vectơ từ toạ độ"
+    tag_id: Mapped[int | None] = mapped_column(ForeignKey("taxonomy_nodes.id", ondelete="SET NULL"))
+    level: Mapped[Level | None] = mapped_column(Enum(Level))
+    type: Mapped[QuestionType | None] = mapped_column(Enum(QuestionType))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class TaxonomyNode(Base):
     """Một nút trong cây thẻ: lớp > chủ đề > dạng bài."""
 
@@ -91,7 +107,7 @@ class Question(Base):
     status: Mapped[Status] = mapped_column(Enum(Status), default=Status.APPROVED)
     version: Mapped[int] = mapped_column(Integer, default=1)
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
-    # nhóm biến thể: các câu cùng dạng, chỉ khác số liệu (mã nhóm = mã câu gốc)
+    # nhóm biến thể: các câu cùng dạng, chỉ khác số liệu; giá trị là `VariantGroup.code` (ví dụ N-000012)
     variant_group: Mapped[str | None] = mapped_column(String(64), index=True)
     # cảnh báo lúc sinh bằng AI (hình lỗi, đáp án tính lại không khớp); xoá khi câu được sửa
     check_note: Mapped[str | None] = mapped_column(Text)

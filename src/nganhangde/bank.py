@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from .models import Choice, Level, Question, QuestionTag, QuestionType, Status, TaxonomyNode
+from .models import Choice, Level, Question, QuestionTag, QuestionType, Status, TaxonomyNode, VariantGroup
 from .parser import ParsedQuestion, slugify
 
 
@@ -107,7 +107,10 @@ def delete_question(session: Session, code: str) -> None:
     if session.scalar(select(ExamItem.id).where(ExamItem.question_id == q.id)):
         raise BankError(f"câu {code} đã nằm trong một đề, không xoá được")
     session.execute(QuestionTag.__table__.delete().where(QuestionTag.question_id == q.id))
+    group = q.variant_group
     session.delete(q)
+    session.flush()
+    fix_groups(session, [group])
     session.commit()
 
 
@@ -148,11 +151,13 @@ def bulk_delete(session: Session, codes: list[str]) -> tuple[int, list[str]]:
     used = set(session.scalars(select(ExamItem.question_id).where(ExamItem.question_id.in_([q.id for q in qs]))))
     old = {n.path for q in qs for n in q.tags}
     kept = [q.code for q in qs if q.id in used]
+    groups = {q.variant_group for q in qs if q.id not in used}
     for q in qs:
         if q.id not in used:
             q.tags = []
             session.delete(q)
     session.flush()
+    fix_groups(session, groups)
     for path in old:
         prune_tags(session, path)
     session.commit()
@@ -409,3 +414,107 @@ def tag_names(node: TaxonomyNode) -> list[str]:
         names.append(cur.name)
         cur = cur.parent
     return names[::-1]
+
+
+# ---------- Nhóm biến thể ----------
+
+
+class GroupError(Exception):
+    pass
+
+
+def get_group(session: Session, code: str | None) -> VariantGroup | None:
+    if not code:
+        return None
+    return session.scalar(select(VariantGroup).where(VariantGroup.code == code))
+
+
+def new_group(session: Session, origin: Question, label: str | None = None) -> VariantGroup:
+    """Tạo nhóm mới lấy `origin` làm câu gốc (thẻ, mức độ, loại câu của nhóm theo câu gốc)."""
+    g = VariantGroup(code="", origin_code=origin.code, label=(label or "").strip() or None,
+                     tag_id=origin.tags[0].id if origin.tags else None, level=origin.level, type=origin.type)
+    session.add(g)
+    session.flush()
+    g.code = f"N-{g.id:06d}"
+    return g
+
+
+def ensure_group(session: Session, q: Question, label: str | None = None) -> VariantGroup:
+    """Nhóm của câu `q`; câu chưa có nhóm thì tạo nhóm mới với `q` là câu gốc."""
+    g = get_group(session, q.variant_group)
+    if g is None:
+        g = new_group(session, q, label)
+        q.variant_group = g.code
+    elif label and not g.label:
+        g.label = label.strip()
+    return g
+
+
+def group_size(session: Session, code: str) -> int:
+    return session.scalar(select(func.count()).select_from(Question).where(Question.variant_group == code)) or 0
+
+
+def _fix_origin(session: Session, g: VariantGroup) -> None:
+    """Câu gốc rời nhóm: câu cũ nhất còn lại thành câu gốc; nhóm hết câu thì xoá."""
+    members = list(session.scalars(select(Question).where(Question.variant_group == g.code).order_by(Question.id)))
+    if not members:
+        session.delete(g)
+    elif g.origin_code not in {m.code for m in members}:
+        g.origin_code = members[0].code
+
+
+def set_group(session: Session, q: Question, code: str | None) -> VariantGroup | None:
+    """Chuyển câu `q` sang nhóm `code` (None = tách khỏi nhóm, câu đứng riêng)."""
+    target = None
+    if code:
+        target = get_group(session, code)
+        if target is None:
+            raise GroupError(f"không có nhóm {code}")
+        if target.type is not None and target.type != q.type:
+            raise GroupError(f"nhóm {code} gồm câu khác loại với câu {q.code}")
+    old = get_group(session, q.variant_group)
+    q.variant_group = target.code if target else None
+    session.flush()
+    if old is not None and old is not target:
+        _fix_origin(session, old)
+    return target
+
+
+def merge_group(session: Session, questions: list[Question], label: str | None = None) -> VariantGroup:
+    """Gộp các câu thành một nhóm: dùng nhóm lớn nhất mà một trong các câu đang thuộc về, hoặc tạo nhóm
+    mới với câu cũ nhất là câu gốc. Các câu phải cùng loại."""
+    if len(questions) < 2:
+        raise GroupError("cần chọn ít nhất 2 câu để gộp")
+    if len({q.type for q in questions}) > 1:
+        raise GroupError("các câu trong một nhóm phải cùng loại câu")
+    existing = [g for g in {get_group(session, q.variant_group) for q in questions} if g is not None]
+    target = max(existing, key=lambda g: (group_size(session, g.code), -g.id)) if existing else new_group(session, min(questions, key=lambda q: q.id))
+    if label and label.strip():
+        target.label = label.strip()
+    for q in questions:
+        set_group(session, q, target.code)
+    return target
+
+
+def migrate_groups(session: Session) -> int:
+    """Chuyển nhóm kiểu cũ (giá trị là mã câu gốc) sang bảng nhóm biến thể. Trả về số nhóm đã chuyển."""
+    known = set(session.scalars(select(VariantGroup.code)))
+    old = [v for v in session.scalars(select(Question.variant_group).where(Question.variant_group.is_not(None)).distinct())
+           if v not in known]
+    for value in old:
+        members = list(session.scalars(select(Question).where(Question.variant_group == value).order_by(Question.id)))
+        origin = next((m for m in members if m.code == value), members[0])
+        g = new_group(session, origin)
+        for m in members:
+            m.variant_group = g.code
+    if old:
+        session.commit()
+    return len(old)
+
+
+def fix_groups(session: Session, codes) -> None:
+    """Sau khi xoá câu: cập nhật câu gốc của các nhóm liên quan, xoá nhóm không còn câu nào."""
+    for code in codes:
+        g = get_group(session, code)
+        if g is not None:
+            _fix_origin(session, g)

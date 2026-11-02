@@ -29,6 +29,18 @@ export interface QuestionSummary {
   check_note: string | null;
   /** Số câu trong nhóm biến thể (kể cả câu này). */
   n_variants?: number;
+  /** Mô tả dạng bài của nhóm biến thể. */
+  variant_label?: string | null;
+}
+
+export interface VariantGroup {
+  code: string;
+  origin_code: string | null;
+  label: string | null;
+  level: Level | null;
+  type: QType | null;
+  n: number;
+  members?: { code: string; status: Status }[];
 }
 
 export interface Question extends QuestionSummary {
@@ -39,6 +51,8 @@ export interface Question extends QuestionSummary {
   version: number;
   ex_source: string;
   variants?: { code: string; status: Status }[];
+  /** Câu gốc của nhóm biến thể. */
+  variant_origin?: string | null;
 }
 
 export interface Parsed {
@@ -546,6 +560,12 @@ export const api = {
     request<GenParams>("GET", `/api/questions/${encodeURIComponent(code)}/variant-params?count=${count}`),
   approveGroup: (group: string) =>
     request<{ approved: number; skipped: string[] }>("POST", `/api/questions/group/${encodeURIComponent(group)}/approve`),
+  variantGroup: (code: string) => request<VariantGroup>("GET", `/api/variant-groups/${encodeURIComponent(code)}`),
+  labelGroup: (code: string, label: string) =>
+    request<VariantGroup>("PUT", `/api/variant-groups/${encodeURIComponent(code)}`, { label }),
+  mergeGroup: (codes: string[], label?: string) => request<VariantGroup>("POST", "/api/variant-groups/merge", { codes, label }),
+  setQuestionGroup: (code: string, group: string | null) =>
+    request<{ code: string; variant_group: string | null }>("PUT", `/api/questions/${encodeURIComponent(code)}/variant-group`, { group }),
   setExamVary: (id: number, vary: boolean) => request<ExamSummary>("PUT", `/api/exams/${id}/vary`, { vary }),
   publishExam: (id: number, published: boolean) => request<ExamSummary>("PUT", `/api/exams/${id}/published`, { published }),
   requestAnswers: (id: number) => request<ExamSummary>("POST", `/api/exams/${id}/answer-request`),

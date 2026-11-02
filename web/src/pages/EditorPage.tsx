@@ -96,6 +96,35 @@ export default function EditorPage() {
     }
   };
 
+  const reload = async () => {
+    if (code) setQuestion(await api.getQuestion(code));
+  };
+
+  const editLabel = async () => {
+    if (!question?.variant_group) return;
+    const label = window.prompt("Mô tả dạng bài của nhóm (ví dụ: Độ dài vectơ từ toạ độ)", question.variant_label ?? "");
+    if (label === null) return;
+    try {
+      await api.labelGroup(question.variant_group, label);
+      await reload();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
+  // group = null: tách khỏi nhóm; asked: đã hỏi mã nhóm (bấm huỷ thì thôi)
+  const moveGroup = async (group: string | null, asked = false) => {
+    if (!code || (asked && !group)) return;
+    if (!asked && !window.confirm(`Tách câu ${code} khỏi nhóm ${question?.variant_group}?`)) return;
+    try {
+      const r = await api.setQuestionGroup(code, group?.trim() || null);
+      setMessage(r.variant_group ? `Đã chuyển câu vào nhóm ${r.variant_group}.` : "Đã tách câu khỏi nhóm.");
+      await reload();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
   const previewPdf = async () => {
     setBusy(true);
     setError("");
@@ -151,24 +180,43 @@ export default function EditorPage() {
           Cảnh báo lúc sinh: {question.check_note}. Sửa và lưu lại câu thì cảnh báo này tự mất.
         </div>
       )}
-      {question?.variant_group && (question.variants?.length ?? 0) > 1 && (
+      {question && code && (
         <div className="variant-strip">
-          <span className="muted small">Nhóm biến thể ({question.variants!.length} câu):</span>
-          {question.variants!.map((v) =>
-            v.code === code ? (
-              <span key={v.code} className="tag current">
-                {v.code}
+          {question.variant_group ? (
+            <>
+              <span className="muted small">
+                Nhóm biến thể <b>{question.variant_group}</b>
+                {question.variant_label && <> · {question.variant_label}</>} ({question.variants?.length ?? 1} câu
+                {question.variant_origin && question.variant_origin !== code && <>, câu gốc {question.variant_origin}</>}):
               </span>
-            ) : (
-              <Link key={v.code} to={`/cau/${encodeURIComponent(v.code)}`} className={`tag ${v.status === "draft" ? "is-draft" : ""}`}>
-                {v.code}
-                {v.status === "draft" && " (nháp)"}
+              {question.variants!.map((v) =>
+                v.code === code ? (
+                  <span key={v.code} className="tag current">
+                    {v.code}
+                  </span>
+                ) : (
+                  <Link key={v.code} to={`/cau/${encodeURIComponent(v.code)}`} className={`tag ${v.status === "draft" ? "is-draft" : ""}`}>
+                    {v.code}
+                    {v.status === "draft" && " (nháp)"}
+                  </Link>
+                ),
+              )}
+              <Link className="small" to={`/?nhom=${encodeURIComponent(question.variant_group)}`}>
+                Xem cả nhóm
               </Link>
-            ),
+              <button className="link small" onClick={editLabel}>
+                {question.variant_label ? "Sửa mô tả dạng" : "Thêm mô tả dạng"}
+              </button>
+              <button className="link small" onClick={() => moveGroup(null)} title="Câu khác dạng với nhóm: để câu đứng riêng">
+                Tách khỏi nhóm
+              </button>
+            </>
+          ) : (
+            <span className="muted small">Câu chưa thuộc nhóm biến thể nào.</span>
           )}
-          <Link className="small" to={`/?nhom=${encodeURIComponent(question.variant_group)}`}>
-            Xem cả nhóm ở ngân hàng
-          </Link>
+          <button className="link small" onClick={() => moveGroup(window.prompt("Mã nhóm muốn chuyển câu này vào (ví dụ N-000012):") || null, true)}>
+            {question.variant_group ? "Chuyển sang nhóm khác…" : "Đưa vào nhóm…"}
+          </button>
         </div>
       )}
       {!admin && !code && <p className="hint">Câu mới lưu ở dạng nháp, admin duyệt rồi mới dùng để ghép đề.</p>}
