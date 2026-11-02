@@ -323,6 +323,11 @@ export default function BankPage() {
               <span className={`badge level-${q.level ?? "none"}`}>{levelLabel(q.level)}</span>
               <span className="badge">{typeLabel(q.type)}</span>
               {q.status === "draft" && <span className="badge draft">Nháp</span>}
+              {q.params && (
+                <span className="badge param" title="Câu tham số: mỗi mã đề, mỗi lượt luyện bốc một bộ số mới. Đang hiện một bộ số mẫu.">
+                  Câu tham số
+                </span>
+              )}
               {q.variant_group && (q.n_variants ?? 1) > 1 && !filters.group && (
                 <button
                   className="badge variant"
@@ -342,13 +347,15 @@ export default function BankPage() {
             </div>
             {q.check_note && <div className="alert error small">Cảnh báo lúc sinh: {q.check_note}</div>}
             <Link to={`/cau/${encodeURIComponent(q.code)}`} className="card-body">
-              <Tex source={q.stem} />
+              <Tex source={q.sample?.stem ?? q.stem} />
             </Link>
-            <div className="card-foot">
-              <Link className="small" to={`/sinh/bien-the/${encodeURIComponent(q.code)}`}>
-                Sinh biến thể
-              </Link>
-            </div>
+            {!q.params && (
+              <div className="card-foot">
+                <Link className="small" to={`/sinh/bien-the/${encodeURIComponent(q.code)}`}>
+                  Sinh biến thể
+                </Link>
+              </div>
+            )}
           </article>
         ))}
         {items.length === 0 && !error && (

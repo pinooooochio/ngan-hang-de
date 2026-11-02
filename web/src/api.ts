@@ -31,6 +31,31 @@ export interface QuestionSummary {
   n_variants?: number;
   /** Mô tả dạng bài của nhóm biến thể. */
   variant_label?: string | null;
+  /** Câu tham số: các dòng % @thamso / @dieukien / @tinh. */
+  params?: string | null;
+  /** Câu tham số: một bộ số cố định để hiển thị trong danh sách. */
+  sample?: ParamInstance | null;
+}
+
+/** Một bản cụ thể của câu tham số (đã thay số). */
+export interface ParamInstance {
+  values: Record<string, string>;
+  stem: string;
+  choices?: ChoiceData[];
+  short_answer?: string | null;
+  solution?: string;
+}
+
+export interface ParamReport {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  tried: number;
+  valid: number;
+  distinct: number;
+  domain: number;
+  reasons: Record<string, number>;
+  samples: ParamInstance[];
 }
 
 export interface VariantGroup {
@@ -67,6 +92,8 @@ export interface Parsed {
   solution: string;
   errors: string[];
   warnings: string[];
+  params?: string | null;
+  param_report?: ParamReport | null;
 }
 
 export interface ImportPreviewItem extends Parsed {

@@ -223,6 +223,36 @@ nhd build examples/de-vecto.toml                 # sinh 4 mã đề + PDF vào o
 - Lời giải không nên ghi "chọn B": chữ cái sẽ sai sau khi đảo. Import sẽ cảnh báo những câu như vậy.
 - Câu trùng nội dung với câu đã có sẽ bị bỏ qua khi import.
 
+### Câu tham số
+
+Câu tham số là một mẫu câu có chỗ để thay số. Mỗi mã đề và mỗi lượt luyện bốc một bộ số mới, còn đáp án
+được tính lại chính xác bằng phân số, nên không bao giờ lệch với số liệu.
+
+```latex
+% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: NB
+% @thamso: a = 1..6; b = -5..5; c = -4..4
+% @dieukien: c != 0; b != 0
+% @tinh: d = 2*a + c
+\begin{ex}
+  Cho $\vec u=({{a}};{{b}};{{c}})$ và $\vec v=(2;0;1)$. Tích vô hướng $\vec u\cdot\vec v$ bằng
+  \choice{\True ${{d}}$}{${{2*a - c}}$}{${{d + 1}}$}{${{-d - 2}}$}
+  \loigiai{$\vec u\cdot\vec v = {{a}}\cdot 2 + {{b:()}}\cdot 0 + {{c:()}}\cdot 1 = {{d}}$.}
+\end{ex}
+```
+
+- `@thamso`: miền giá trị, dạng `a = 1..6`, `k = 2..10 buoc 2` hoặc `r = {1/2, 3, -1}`.
+- `@dieukien`: các điều kiện bộ số phải thoả (`!=`, `<`, `=`, `va`, `hoac`); bộ số không thoả bị bốc lại.
+- `@tinh`: đại lượng tính từ tham số, dùng được trong đề và các `@tinh` sau.
+- `{{biểu thức}}` thay vào đề, phương án, đáp án ngắn và lời giải. Cách in: `{{b:+}}` luôn có dấu (`+ 3`, `- 3`),
+  `{{a:c}}` hệ số (bỏ số 1, `-1` thành `-`), `{{b:c+}}` hệ số kèm dấu, `{{b:()}}` số âm đóng ngoặc,
+  `{{I:.2}}` làm tròn 2 chữ số thập phân. Phân số in thành `\dfrac`.
+- Hàm: `sqrt` (giữ chính xác khi khai được), `abs`, `min`, `max`, `gcd`, `lcm`, `floor`, `ceil`, `round`,
+  `comb`, `perm`, `factorial`, `cbrt`, `ln`, `log`, `exp`, `sin`, `cos`, `tan`.
+- Khi lưu, máy bốc thử 200 lần: báo lỗi nếu dùng tên chưa khai báo, không bốc được bộ số hợp lệ, có ít hơn
+  3 bộ số khác nhau, hoặc phương án trùng nhau / trùng đáp án. Khung xem trước hiện 3 bản mẫu và nút "Bộ số khác".
+- Trong ngân hàng, câu tham số có nhãn "Câu tham số" và hiện một bộ số mẫu. Bản PDF của đề giữ đúng bộ số của
+  từng mã đề. Câu tham số không cần sinh biến thể bằng Claude nên bị bỏ qua khi sinh biến thể hàng loạt.
+
 ## Cấu hình đề
 
 Xem `examples/de-vecto.toml`. Mỗi `[[section]]` là một phần của đề, chọn câu theo ma trận

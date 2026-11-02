@@ -129,7 +129,8 @@ def other_variant(session: Session, code: str, seen: dict[str, datetime], rng: r
 
 
 def personalize(session: Session, data: dict, user_id: int, rng: random.Random) -> dict:
-    """Bản đề riêng cho một lượt: mỗi câu có nhóm biến thể đổi sang biến thể người làm chưa gặp.
+    """Bản đề riêng cho một lượt: mỗi câu có nhóm biến thể đổi sang biến thể người làm chưa gặp, câu
+    tham số bốc bộ số mới.
     Giữ thứ tự câu và vị trí đáp án đúng của câu trắc nghiệm (để đáp án vẫn cân đối A/B/C/D)."""
     data = copy.deepcopy(data)
     seen = seen_by(session, user_id)
@@ -138,7 +139,11 @@ def personalize(session: Session, data: dict, user_id: int, rng: random.Random) 
         for i, item in enumerate(sec["questions"]):
             m = other_variant(session, item["code"], seen, rng, exclude=taken - {item["code"]})
             if m is None or m.code == item["code"]:
-                continue
+                # câu tham số: giữ câu, bốc bộ số mới cho lượt này
+                q = bank.get_question(session, item["code"])
+                if q is None or not q.params:
+                    continue
+                m = q
             perm = None
             if m.type == QuestionType.MCQ:
                 target = next((k for k, c in enumerate(item["choices"]) if c["correct"]), None)
@@ -147,7 +152,7 @@ def personalize(session: Session, data: dict, user_id: int, rng: random.Random) 
                 perm = generator.permute_choices(m, rng)
             taken.discard(item["code"])
             taken.add(m.code)
-            sec["questions"][i] = generator.snapshot(m, perm)
+            sec["questions"][i] = generator.snapshot(m, perm, rng)
     return data
 
 

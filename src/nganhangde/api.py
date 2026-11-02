@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import threading
 import zipfile
+import zlib
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -23,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import aigen, auth, backup, bank, builds, figures, generator, practice, render
+from . import aigen, params, auth, backup, bank, builds, figures, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url, upgrade_schema
 from .models import (
@@ -83,6 +84,7 @@ def question_json(q: Question, full: bool = True) -> dict:
         "updated_at": q.updated_at.isoformat(timespec="seconds") if q.updated_at else None,
         "variant_group": q.variant_group,
         "check_note": q.check_note,
+        "params": q.params,
     }
     if full:
         data.update(
@@ -94,11 +96,42 @@ def question_json(q: Question, full: bool = True) -> dict:
             version=q.version,
             ex_source=question_to_ex(q),
         )
+    if q.params:
+        data["sample"] = param_sample(q, full)
     return data
 
 
-def parsed_json(pq: ParsedQuestion) -> dict:
+def param_sample(q: Question, full: bool) -> dict | None:
+    """Một bộ số cố định theo mã câu để hiển thị câu tham số trong danh sách (thay vì {{a}})."""
+    try:
+        inst = params.instantiate_question(q, random.Random(zlib.crc32(q.code.encode())))
+    except params.ParamError:
+        return None
+    out = instance_json(inst)
+    return out if full else {"values": out["values"], "stem": out["stem"]}
+
+
+def instance_json(inst: params.Instance) -> dict:
+    return {"values": inst.values_text(), "stem": inst.stem, "short_answer": inst.short_answer,
+            "solution": inst.solution,
+            "choices": [{"content": c, "correct": ok, "pinned": pin} for c, ok, pin in inst.choices]}
+
+
+def param_report(pq: ParsedQuestion) -> dict | None:
+    """Câu tham số: chạy thử 200 lần bốc số, kèm 3 bản mẫu để người soạn xem trước khi duyệt."""
+    if not pq.params:
+        return None
+    rep = params.check(pq.type, pq.params, pq.stem, [(c.content, c.is_correct, c.pinned) for c in pq.choices],
+                       pq.short_answer, pq.solution)
+    return {"ok": rep.ok, "errors": rep.errors, "warnings": rep.warnings, "tried": rep.tried, "valid": rep.valid,
+            "distinct": rep.distinct, "domain": rep.domain, "reasons": rep.reasons,
+            "samples": [instance_json(i) for i in rep.samples]}
+
+
+def parsed_json(pq: ParsedQuestion, report: bool = False) -> dict:
     return {
+        "params": pq.params,
+        "param_report": param_report(pq) if report else None,
         "line": pq.line,
         "type": pq.type.value,
         "level": pq.level.value if pq.level else None,
@@ -920,7 +953,8 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     @app.post("/api/parse", dependencies=[STAFF])
     def parse(body: SourceIn):
-        return [parsed_json(pq) for pq in parse_text(body.source)]
+        pqs = parse_text(body.source)
+        return [parsed_json(pq, report=len(pqs) == 1) for pq in pqs]
 
     @app.get("/api/tags", dependencies=[U])
     def tags(session: Session = S):
@@ -1002,6 +1036,15 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             "short_answer": pq.short_answer,
             "solution": pq.solution,
         }
+        if pq.params:  # câu tham số: in một bộ số ngẫu nhiên
+            try:
+                inst = params.instantiate(pq.type, pq.params, pq.stem,
+                                          [(c.content, c.is_correct, c.pinned) for c in pq.choices],
+                                          pq.short_answer, pq.solution, random.Random())
+            except params.ParamError as e:
+                raise HTTPException(422, f"câu tham số: {e}") from e
+            item.update(stem=inst.stem, short_answer=inst.short_answer, solution=inst.solution,
+                        choices=[{"content": c, "correct": ok} for c, ok, _ in inst.choices])
         data = {
             "title": "Xem trước câu hỏi",
             "date": "",

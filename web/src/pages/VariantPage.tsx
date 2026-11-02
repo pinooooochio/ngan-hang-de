@@ -111,7 +111,13 @@ export default function VariantPage() {
               </span>
             ))}
           </div>
-          <QuestionView type={q.type} stem={q.stem} choices={q.choices} shortAnswer={q.short_answer} solution={q.solution} />
+          <QuestionView
+            type={q.type}
+            stem={q.sample?.stem ?? q.stem}
+            choices={q.sample?.choices ?? q.choices}
+            shortAnswer={q.sample ? q.sample.short_answer : q.short_answer}
+            solution={q.sample?.solution ?? q.solution}
+          />
         </div>
       )}
 

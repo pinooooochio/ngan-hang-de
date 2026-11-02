@@ -109,6 +109,8 @@ class Question(Base):
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     # nhóm biến thể: các câu cùng dạng, chỉ khác số liệu; giá trị là `VariantGroup.code` (ví dụ N-000012)
     variant_group: Mapped[str | None] = mapped_column(String(64), index=True)
+    # câu tham số: các dòng khai báo % @thamso / @dieukien / @tinh; đề, phương án, lời giải có chỗ {{...}}
+    params: Mapped[str | None] = mapped_column(Text)
     # cảnh báo lúc sinh bằng AI (hình lỗi, đáp án tính lại không khớp); xoá khi câu được sửa
     check_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

@@ -67,6 +67,7 @@ class ParsedQuestion:
     tags: list[list[str]] = field(default_factory=list)  # mỗi thẻ là một đường dẫn tên
     ex_id: str | None = None
     source: str | None = None
+    params: str | None = None  # câu tham số: các dòng % @thamso / @dieukien / @tinh
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -76,6 +77,8 @@ class ParsedQuestion:
 
     def content_hash(self) -> str:
         parts = [normalize(self.stem)] + sorted(normalize(c.content) for c in self.choices)
+        if self.params:
+            parts.append(normalize(self.params))
         return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()
 
 
@@ -239,6 +242,9 @@ def parse_block(raw: str, preamble: str, line: int) -> ParsedQuestion:
         if not q.tags and q.ex_id[0] in EX_ID_GRADE:
             q.tags.append([EX_ID_GRADE[q.ex_id[0]]])
 
+    from .params import find_lines
+
+    q.params = find_lines(preamble + "\n" + raw)
     validate(q)
     return q
 
@@ -266,6 +272,13 @@ def validate(q: ParsedQuestion) -> None:
         q.warnings.append("chưa gắn thẻ lớp/chủ đề")
     if q.level is None:
         q.warnings.append("chưa có mức độ")
+    if q.params and not q.errors:
+        from .params import check
+
+        rep = check(q.type, q.params, q.stem, [(c.content, c.is_correct, c.pinned) for c in q.choices],
+                    q.short_answer, q.solution, n=120, n_samples=0)
+        q.errors += [f"câu tham số: {e}" for e in rep.errors]
+        q.warnings += [f"câu tham số: {w}" for w in rep.warnings]
 
 
 def mask_comments(s: str) -> str:

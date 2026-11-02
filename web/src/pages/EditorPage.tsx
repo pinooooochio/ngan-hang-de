@@ -4,6 +4,7 @@ import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, levelLabel, typeLabel, type LogEntry, type Parsed, type Question, type Status } from "../api";
+import ParamPreview from "../components/ParamPreview";
 import QuestionView from "../components/QuestionView";
 import { useAuth } from "../auth";
 import { LogTable } from "./LogPage";
@@ -60,6 +61,16 @@ export default function EditorPage() {
   }, [source]);
 
   const one = parsed && parsed.length === 1 ? parsed[0] : null;
+  const [rerolling, setRerolling] = useState(false);
+  // Câu tham số: phân tích lại để máy chủ bốc 3 bộ số mới
+  const reroll = () => {
+    setRerolling(true);
+    api
+      .parse(source)
+      .then(setParsed)
+      .catch((e) => setError(String(e.message)))
+      .finally(() => setRerolling(false));
+  };
   const canSave = !!one && one.errors.length === 0 && !busy;
 
   useEffect(() => {
@@ -161,7 +172,7 @@ export default function EditorPage() {
         <button disabled={!one || busy} onClick={previewPdf}>
           Xem PDF
         </button>
-        {code && question && (
+        {code && question && !question.params && (
           <Link className="button" to={`/sinh/bien-the/${encodeURIComponent(code)}`} title="Soạn thêm câu cùng dạng, khác số liệu">
             Sinh biến thể
           </Link>
@@ -230,6 +241,16 @@ export default function EditorPage() {
             đúng, <code>\Pin</code> giữ cố định vị trí. Dòng <code>% @tags: … ; @level: … ; @id: …</code> ở trên cùng khai
             báo thẻ, mức độ, mã câu.
           </p>
+          <details className="hint">
+            <summary>Câu tham số (đổi số mỗi lần ra đề)</summary>
+            Thêm các dòng ngay dưới dòng <code>@tags</code>: <code>% @thamso: a = 1..6; b = -5..5; k = 2..10 buoc 2; r = {"{1/2, 3}"}</code>{" "}
+            (miền giá trị), <code>% @dieukien: b != 0; a != b</code> (loại bộ số), <code>% @tinh: d = 2*a + b</code>{" "}
+            (đại lượng tính từ tham số). Trong đề, lời giải và các phương án viết <code>{"{{a}}"}</code> hoặc biểu thức{" "}
+            <code>{"{{2*a - b}}"}</code>; máy tính chính xác bằng phân số. Cách in: <code>{"{{b:+}}"}</code> có dấu,{" "}
+            <code>{"{{a:c}}"}</code> hệ số (bỏ số 1), <code>{"{{b:c+}}"}</code> hệ số kèm dấu, <code>{"{{b:()}}"}</code> âm thì
+            đóng ngoặc, <code>{"{{I:.1}}"}</code> làm tròn 1 chữ số thập phân. Hàm: sqrt, abs, gcd, lcm, comb, perm,
+            factorial, round, ln, log, exp, sin, cos, tan.
+          </details>
         </div>
         <div className="preview-pane">
           {parsed && parsed.length !== 1 && (
@@ -257,13 +278,17 @@ export default function EditorPage() {
                   Cảnh báo: {w}
                 </div>
               ))}
-              <QuestionView
-                type={one.type}
-                stem={one.stem}
-                choices={one.choices}
-                shortAnswer={one.short_answer}
-                solution={one.solution}
-              />
+              {one.param_report ? (
+                <ParamPreview report={one.param_report} type={one.type} busy={rerolling} onReroll={reroll} />
+              ) : (
+                <QuestionView
+                  type={one.type}
+                  stem={one.stem}
+                  choices={one.choices}
+                  shortAnswer={one.short_answer}
+                  solution={one.solution}
+                />
+              )}
             </>
           )}
           {code && log && (

@@ -53,6 +53,7 @@ def _apply(session: Session, q: Question, pq: ParsedQuestion) -> None:
     q.solution_latex = pq.solution
     q.short_answer = pq.short_answer
     q.ex_id = pq.ex_id
+    q.params = pq.params
     if pq.source:
         q.source = pq.source
     q.content_hash = pq.content_hash()
