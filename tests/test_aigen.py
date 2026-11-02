@@ -285,6 +285,20 @@ def test_multi_rows_api_mode_queues_one_batch_per_row(app, monkeypatch):
     g = c.post("/api/gen/batches/multi", json={"rows": ROWS, "mode": "api"}).json()
     assert [b["status"] for b in g["batches"]] == ["pending"] * 3
     assert len({b["group_id"] for b in g["batches"]}) == 1
+    # sinh bằng API được tới 300 câu một đợt; dán tay mỗi phần tối đa 60 câu
+    big = [{**ROWS[i % 3], "count": 30} for i in range(10)]
+    assert c.post("/api/gen/batches/multi", json={"rows": big, "mode": "api"}).status_code == 201
+    assert c.post("/api/gen/batches/multi", json={"rows": big + [ROWS[0]], "mode": "api"}).status_code == 422
+    assert c.post("/api/gen/prompt/multi", json={"rows": big[:2]}).status_code == 200
+    assert c.post("/api/gen/prompt/multi", json={"rows": big[:3]}).status_code == 422
+
+
+def test_manual_parts_join_one_group(app):
+    c = app.state.client
+    first = c.post("/api/gen/batches/multi", json={"rows": ROWS[:2], "mode": "manual", "output": MULTI_OUTPUT}).json()
+    second = c.post("/api/gen/batches/multi", json={"rows": ROWS[2:], "mode": "manual", "output": MULTI_OUTPUT,
+                                                    "group_id": first["group_id"]}).json()
+    assert second["group_id"] == first["group_id"]
 
 
 VARIANTS = r"""% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: NB

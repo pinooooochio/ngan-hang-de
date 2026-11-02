@@ -330,7 +330,7 @@ class GenCheckIn(BaseModel):
 
 
 class GenRowsIn(BaseModel):
-    rows: list[GenParamsIn] = Field(min_length=1, max_length=40)
+    rows: list[GenParamsIn] = Field(min_length=1, max_length=200)
 
 
 class GenMultiCheckIn(GenRowsIn):
@@ -340,6 +340,7 @@ class GenMultiCheckIn(GenRowsIn):
 class GenMultiIn(GenRowsIn):
     mode: str = Field("api", pattern="^(api|manual)$")
     output: str | None = None
+    group_id: str | None = None  # dán tay nhiều phần: phần sau gộp vào đợt của phần trước
 
 
 class GenBatchIn(BaseModel):
@@ -1275,7 +1276,8 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     @app.get("/api/gen/curriculum", dependencies=[STAFF])
     def gen_curriculum():
         return {"grades": aigen.load_curriculum(), "api": aigen.api_available(), "model": aigen.model_name(),
-                "max_count": aigen.MAX_COUNT, "max_total": aigen.MAX_TOTAL}
+                "max_count": aigen.MAX_COUNT, "max_total": aigen.MAX_TOTAL,
+                "max_prompt": aigen.MAX_PROMPT}
 
     @app.get("/api/gen/coverage", dependencies=[STAFF])
     def gen_coverage(grade: str, session: Session = S):
@@ -1323,7 +1325,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         """Một đợt sinh nhiều ô: mỗi ô một lần sinh, chung mã đợt."""
         try:
             batches = aigen.create_group(session, rows_of(body), body.mode, body.output,
-                                         user_id=user.id, username=user.username)
+                                         user_id=user.id, username=user.username, group_id=body.group_id)
         except aigen.GenError as e:
             session.rollback()
             raise HTTPException(422, str(e))
