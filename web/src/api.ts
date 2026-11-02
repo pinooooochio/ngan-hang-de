@@ -258,6 +258,8 @@ export interface Curriculum {
   model: string;
   max_count: number;
   max_total: number;
+  /** Tổng số câu tối đa của một prompt dán tay; nhiều hơn thì chia phần. */
+  max_prompt: number;
 }
 
 export interface CoverageTopic {
@@ -581,8 +583,8 @@ export const api = {
   genPromptMulti: (rows: GenParams[]) =>
     request<{ system: string; user: string; combined: string }>("POST", "/api/gen/prompt/multi", { rows }),
   genCheckMulti: (rows: GenParams[], output: string) => request<GenMultiCheck>("POST", "/api/gen/check/multi", { rows, output }),
-  genCreateMulti: (rows: GenParams[], mode: "api" | "manual", output?: string) =>
-    request<{ group_id: string; batches: GenBatch[] }>("POST", "/api/gen/batches/multi", { rows, mode, output }),
+  genCreateMulti: (rows: GenParams[], mode: "api" | "manual", output?: string, group_id?: string) =>
+    request<{ group_id: string; batches: GenBatch[] }>("POST", "/api/gen/batches/multi", { rows, mode, output, group_id }),
   genBatch: (id: number) => request<GenBatchDetail>("GET", `/api/gen/batches/${id}`),
   genRetry: (id: number) => request<GenBatchDetail>("POST", `/api/gen/batches/${id}/retry`),
   backupInfo: () => request<BackupInfo>("GET", "/api/backup/info"),

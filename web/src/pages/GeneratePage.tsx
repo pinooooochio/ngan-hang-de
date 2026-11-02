@@ -16,9 +16,40 @@ import {
   type QType,
 } from "../api";
 import GenHistory, { bankLink } from "../components/GenHistory";
+import TopicPicker from "../components/TopicPicker";
 import Tex from "../components/Tex";
 
 const TARGET_KEY = "nhd.gen.target";
+const COUNT_KEY = "nhd.gen.count";
+
+function readCount() {
+  try {
+    return Number(localStorage.getItem(COUNT_KEY)) || 10;
+  } catch {
+    return 10;
+  }
+}
+
+/** Chia danh sách thành các phần liên tiếp, mỗi phần tối đa `limit` câu (cách chép prompt). */
+function splitParts<T extends { count: number }>(rows: T[], limit: number): T[][] {
+  const parts: T[][] = [];
+  let cur: T[] = [];
+  let n = 0;
+  for (const r of rows) {
+    if (cur.length && n + r.count > limit) {
+      parts.push(cur);
+      cur = [];
+      n = 0;
+    }
+    cur.push(r);
+    n += r.count;
+  }
+  if (cur.length) parts.push(cur);
+  return parts;
+}
+
+/** Ước lượng token ra cho một câu (câu có hình dài hơn vì mã TikZ). */
+const outTokens = (r: GenParams) => r.count * (r.figure ? 900 : 450);
 
 function readTarget() {
   try {
@@ -50,6 +81,11 @@ export default function GeneratePage() {
   const [saved, setSaved] = useState<GenBatch[] | null>(null);
   const [copied, setCopied] = useState(false);
   const [focusTopic, setFocusTopic] = useState<string>();
+  const [defaultCount, setDefaultCount] = useState(readCount);
+  const [picker, setPicker] = useState(false);
+  // dán tay nhiều phần: các phần đã lưu chung một mã đợt
+  const [manualGroup, setManualGroup] = useState<string | null>(null);
+  const [partsDone, setPartsDone] = useState(0);
 
   useEffect(() => {
     api.genCurriculum().then(setCur);
@@ -72,8 +108,11 @@ export default function GeneratePage() {
   }, [running, grade]);
 
   const maxCount = cur?.max_count ?? 30;
-  const maxTotal = cur?.max_total ?? 60;
+  const maxTotal = cur?.max_total ?? 300;
+  const maxPrompt = cur?.max_prompt ?? 60;
   const total = rows.reduce((s, r) => s + (r.count || 0), 0);
+  const parts = splitParts(rows, maxPrompt);
+  const partRows = parts[0] ?? [];
 
   // Đổi danh sách thì prompt và kết quả kiểm tra cũ không còn đúng
   const changeRows = (next: Row[]) => {
@@ -81,6 +120,8 @@ export default function GeneratePage() {
     setPrompt("");
     setChecked(null);
     setSaved(null);
+    setManualGroup(null);
+    setPartsDone(0);
   };
   const updateRow = (key: number, patch: Partial<GenParams>) =>
     changeRows(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -92,7 +133,7 @@ export default function GeneratePage() {
       topic: "",
       level: "NB",
       type: last?.type ?? "mcq",
-      count: 5,
+      count: defaultCount,
       figure: last?.figure,
       ...patch,
     };
@@ -107,33 +148,43 @@ export default function GeneratePage() {
     }
   };
 
-  const missing = (have: number) => Math.min(maxCount, Math.max(1, target - have));
+  const saveDefaultCount = (n: number) => {
+    setDefaultCount(n);
+    try {
+      localStorage.setItem(COUNT_KEY, String(n));
+    } catch {
+      /* không lưu được thì thôi */
+    }
+  };
+
   const inCart = (topic: string, level: Level) => rows.some((r) => r.grade === grade && r.topic === topic && r.level === level);
 
-  // Bấm ô: thêm vào danh sách (số câu = phần còn thiếu so với mục tiêu), bấm lần nữa thì bỏ ra
-  const pickCell = (t: CoverageTopic, level: Level, have: number) => {
+  // Bấm ô: thêm vào danh sách (số câu mặc định), bấm lần nữa thì bỏ ra
+  const pickCell = (t: CoverageTopic, level: Level) => {
     setFocusTopic(t.name);
     if (inCart(t.name, level)) {
       changeRows(rows.filter((r) => !(r.grade === grade && r.topic === t.name && r.level === level)));
     } else {
-      changeRows([...rows, newRow({ topic: t.name, level, count: missing(have) })]);
+      changeRows([...rows, newRow({ topic: t.name, level })]);
     }
   };
 
-  const fillTargets = () => {
-    const add: Row[] = [];
-    for (const t of topics.filter((x) => x.in_curriculum)) {
-      for (const l of LEVELS) {
-        const c = t.counts[l.value] ?? { approved: 0, draft: 0 };
-        if (c.approved + c.draft < target && !inCart(t.name, l.value))
-          add.push(newRow({ topic: t.name, level: l.value, count: missing(c.approved + c.draft) }));
-      }
+  // Thêm từ hộp chọn chủ đề: dòng trùng (cùng lớp, chủ đề, dạng, mức độ, loại) thì cộng dồn số câu
+  const addRows = (add: Omit<GenParams, "notes">[]) => {
+    const next = [...rows];
+    for (const a of add) {
+      const i = next.findIndex(
+        (r) => r.grade === a.grade && r.topic === a.topic && (r.dang ?? "") === (a.dang ?? "") && r.level === a.level && r.type === a.type,
+      );
+      if (i >= 0) next[i] = { ...next[i], count: Math.min(maxCount, next[i].count + a.count) };
+      else next.push({ ...a, key: nextKey++ });
     }
-    changeRows([...rows, ...add]);
+    changeRows(next);
+    setPicker(false);
   };
 
-  const params = (): GenParams[] =>
-    rows.map(({ key: _key, ...r }) => ({ ...r, notes: notes.trim() || undefined }));
+  const params = (list: Row[] = rows): GenParams[] =>
+    list.map(({ key: _key, ...r }) => ({ ...r, notes: notes.trim() || undefined }));
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -159,12 +210,13 @@ export default function GeneratePage() {
 
   const generate = () => run(async () => afterSave(await api.genCreateMulti(params(), "api")));
 
-  const getPrompt = () =>
-    run(async () => {
-      const r = await api.genPromptMulti(params());
-      setPrompt(r.combined);
-      setCopied(false);
-    });
+  // Cách chép prompt làm theo từng phần: luôn là phần đầu của danh sách còn lại
+  const loadPrompt = async (list: Row[]) => {
+    const r = await api.genPromptMulti(params(list));
+    setPrompt(r.combined);
+    setCopied(false);
+  };
+  const getPrompt = () => run(() => loadPrompt(partRows));
 
   const copy = async () => {
     try {
@@ -175,10 +227,30 @@ export default function GeneratePage() {
     }
   };
 
-  const check = () => run(async () => setChecked(await api.genCheckMulti(params(), output)));
-  const saveManual = () => run(async () => afterSave(await api.genCreateMulti(params(), "manual", output)));
+  const check = () => run(async () => setChecked(await api.genCheckMulti(params(partRows), output)));
+  const saveManual = () =>
+    run(async () => {
+      const g = await api.genCreateMulti(params(partRows), "manual", output, manualGroup ?? undefined);
+      const rest = rows.slice(partRows.length);
+      if (!rest.length) {
+        afterSave({ batches: [...(saved ?? []), ...g.batches] });
+        setManualGroup(null);
+        setPartsDone(0);
+        return;
+      }
+      setPartsDone(partsDone + 1);
+      // còn phần sau: giữ mã đợt, bỏ các dòng đã lưu, lấy luôn prompt phần kế tiếp
+      setBatches([...g.batches, ...batches].sort((a, b) => b.id - a.id));
+      setSaved([...(saved ?? []), ...g.batches]);
+      setManualGroup(g.group_id);
+      setRows(rest);
+      setOutput("");
+      setChecked(null);
+      await loadPrompt(rest.slice(0, splitParts(rest, maxPrompt)[0].length));
+    });
 
-  const ready = rows.length > 0 && rows.every((r) => r.topic.trim() && r.count > 0) && total <= maxTotal;
+  const filled = rows.length > 0 && rows.every((r) => r.topic.trim() && r.count > 0);
+  const ready = filled && total <= maxTotal;
   const nNew = checked?.rows.flat().filter((i) => i.state === "new").length ?? 0;
   const topicsOf = (g: string) => cur?.grades.find((x) => x.ten === g)?.chu_de ?? [];
 
@@ -208,7 +280,7 @@ export default function GeneratePage() {
           </select>
         </label>
         <label className="inline">
-          Mục tiêu mỗi ô
+          Mục tiêu mỗi ô (để tô màu)
           <input type="number" min={1} value={target} onChange={(e) => saveTarget(Number(e.target.value) || 1)} />
           câu đã duyệt
         </label>
@@ -246,7 +318,7 @@ export default function GeneratePage() {
                     <button
                       className={`cov-cell ${cls} ${active ? "active" : ""}`}
                       title={`${c.approved} câu đã duyệt, ${c.draft} câu nháp. Bấm để thêm vào (hoặc bỏ khỏi) danh sách sinh.`}
-                      onClick={() => pickCell(t, l.value, c.approved + c.draft)}
+                      onClick={() => pickCell(t, l.value)}
                     >
                       {c.approved}
                       {c.draft > 0 && <span className="cov-draft">+{c.draft}</span>}
@@ -268,8 +340,20 @@ export default function GeneratePage() {
             {rows.length} ô · {total}/{maxTotal} câu
           </span>
           <span className="spacer" />
-          <button className="link" onClick={fillTargets}>
-            Lấp đầy mục tiêu ({grade})
+          <label className="inline small" title="Số câu khi bấm ô ở bảng độ phủ hoặc thêm dòng mới">
+            Mặc định
+            <input
+              type="number"
+              className="num"
+              min={1}
+              max={maxCount}
+              value={defaultCount}
+              onChange={(e) => saveDefaultCount(Math.max(1, Math.min(maxCount, Number(e.target.value) || 1)))}
+            />
+            câu/dòng
+          </label>
+          <button className="link" onClick={() => setPicker(!picker)}>
+            + Thêm chủ đề
           </button>
           <button className="link" onClick={() => changeRows([...rows, newRow({})])}>
             + Thêm dòng
@@ -281,9 +365,20 @@ export default function GeneratePage() {
           )}
         </div>
 
+        {picker && cur && (
+          <TopicPicker
+            grades={cur.grades}
+            grade={grade}
+            maxCount={maxCount}
+            defaultCount={defaultCount}
+            onAdd={addRows}
+            onClose={() => setPicker(false)}
+          />
+        )}
+
         {rows.length === 0 ? (
           <p className="muted">
-            Chưa có ô nào. Bấm vào các ô trong bảng ở trên, hoặc "Lấp đầy mục tiêu" để thêm mọi ô còn thiếu của {grade}.
+            Chưa có dòng nào. Bấm vào các ô trong bảng ở trên, hoặc "+ Thêm chủ đề" để chọn nhiều chủ đề cùng lúc.
           </p>
         ) : (
           <table className="table gen-rows">
@@ -375,7 +470,8 @@ export default function GeneratePage() {
         )}
         {total > maxTotal && (
           <div className="alert warn">
-            Mỗi đợt tối đa {maxTotal} câu; hãy bớt số câu hoặc chia thành nhiều đợt.
+            Sinh bằng Claude mỗi đợt tối đa {maxTotal} câu; hãy bớt số câu hoặc chia thành nhiều đợt. Cách lấy prompt thì
+            không giới hạn, hệ thống chia thành từng phần {maxPrompt} câu.
           </div>
         )}
 
@@ -411,12 +507,21 @@ export default function GeneratePage() {
           <button className="primary" disabled={busy || !ready || !cur?.api} onClick={generate}>
             Sinh bằng Claude{rows.length > 1 ? ` (${rows.length} ô)` : ""}
           </button>
-          <button disabled={busy || !ready} onClick={getPrompt}>
-            Lấy prompt để tự dán vào Claude
+          <button disabled={busy || !filled} onClick={getPrompt}>
+            Lấy prompt để tự dán vào Claude{parts.length > 1 ? ` (${parts.length} phần)` : ""}
           </button>
           <span className="muted small">
             {cur?.api ? (
-              <>Máy chủ gọi {cur.model}, mỗi ô là một lần sinh, chạy lần lượt.</>
+              <>
+                Máy chủ gọi {cur.model}, mỗi dòng là một lần gọi, chạy lần lượt
+                {rows.length > 0 && (
+                  <>
+                    : {rows.length} lần gọi, khoảng {Math.round(rows.reduce((s, r) => s + outTokens(r), 0) / 1000)} nghìn token
+                    ra
+                  </>
+                )}
+                .
+              </>
             ) : (
               <>Máy chủ chưa có ANTHROPIC_API_KEY nên chưa sinh trực tiếp được; dùng cách lấy prompt.</>
             )}
@@ -425,6 +530,15 @@ export default function GeneratePage() {
 
         {prompt && (
           <div className="manual">
+            {partsDone + parts.length > 1 && (
+              <div className="alert">
+                <b>
+                  Phần {partsDone + 1}/{partsDone + parts.length}
+                </b>{" "}
+                ({partRows.length} dòng, {partRows.reduce((s, r) => s + r.count, 0)} câu). Lưu xong phần này thì prompt phần
+                kế tiếp hiện ra; các phần chung một đợt.
+              </div>
+            )}
             <div className="manual-step">
               <b>1.</b> Chép prompt này, dán vào một cuộc trò chuyện mới với Claude.{" "}
               <button onClick={copy}>{copied ? "Đã chép" : "Chép prompt"}</button>
@@ -449,12 +563,12 @@ export default function GeneratePage() {
                 Kiểm tra
               </button>
               <button className="primary" disabled={busy || !checked || nNew === 0} onClick={saveManual}>
-                Lưu {nNew} câu mới vào ngân hàng (nháp)
+                Lưu {nNew} câu mới vào ngân hàng (nháp){parts.length > 1 ? ", sang phần sau" : ""}
               </button>
             </div>
             {checked && (
               <>
-                {rows.map((r, i) => {
+                {partRows.map((r, i) => {
                   const items = checked.rows[i] ?? [];
                   const n = items.filter((x) => x.state === "new").length;
                   return (

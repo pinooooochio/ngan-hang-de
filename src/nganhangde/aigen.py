@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import tomllib
@@ -44,7 +45,8 @@ log = logging.getLogger(__name__)
 TEMPLATES = Path(__file__).parent / "templates"
 DEFAULT_MODEL = "claude-opus-5-5"
 MAX_COUNT = 30  # số câu tối đa mỗi lần sinh, để kết quả không quá dài
-MAX_TOTAL = 60  # tổng số câu tối đa của một đợt sinh nhiều ô
+MAX_TOTAL = 300  # tổng số câu tối đa của một đợt sinh nhiều ô bằng API (mỗi ô một lần gọi)
+MAX_PROMPT = 60  # tổng số câu tối đa của một prompt gộp (cách chép prompt); hơn thì chia phần
 LEVEL_ORDER = [Level.NB, Level.TH, Level.VD, Level.VDC]
 
 
@@ -649,13 +651,14 @@ def create_batch(session: Session, params: dict, mode: str, output: str | None =
 # gộp thành một prompt, kết quả dán lại được chia về từng ô theo dòng @tags và @level của từng câu.
 
 
-def normalize_rows(rows: list[dict]) -> list[dict]:
+def normalize_rows(rows: list[dict], limit: int = MAX_PROMPT) -> list[dict]:
     if not rows:
         raise GenError("chưa chọn ô nào để sinh")
     out = [normalize_params(r) for r in rows]
     total = sum(r["count"] for r in out)
-    if total > MAX_TOTAL:
-        raise GenError(f"mỗi đợt tối đa {MAX_TOTAL} câu (đang chọn {total} câu)")
+    if total > limit:
+        what = "mỗi đợt" if limit == MAX_TOTAL else "mỗi phần dán tay"
+        raise GenError(f"{what} tối đa {limit} câu (đang chọn {total} câu)")
     return out
 
 
@@ -727,10 +730,12 @@ def check_multi(session: Session, rows: list[dict], text: str) -> dict:
 
 
 def create_group(session: Session, rows: list[dict], mode: str, output: str | None = None,
-                 user_id: int | None = None, username: str | None = None) -> list[GenerationBatch]:
-    """Tạo một đợt sinh: mỗi ô một lần sinh, chung mã đợt."""
-    rows = normalize_rows(rows)
-    group = uuid.uuid4().hex[:10]
+                 user_id: int | None = None, username: str | None = None,
+                 group_id: str | None = None) -> list[GenerationBatch]:
+    """Tạo một đợt sinh: mỗi ô một lần sinh, chung mã đợt. Dán tay thì mỗi phần (tối đa MAX_PROMPT
+    câu) lưu riêng; truyền `group_id` của phần trước để các phần chung một đợt."""
+    rows = normalize_rows(rows, MAX_TOTAL if mode == "api" else MAX_PROMPT)
+    group = group_id if group_id and re.fullmatch(r"[0-9a-f]{10}", group_id) else uuid.uuid4().hex[:10]
     if mode == "manual":
         if not (output or "").strip():
             raise GenError("chưa dán kết quả")

@@ -1535,3 +1535,44 @@ button.badge.variant:hover {
 .variant-source {
   margin-bottom: 12px;
 }
+
+/* ---------- Hộp thêm chủ đề ---------- */
+.topic-picker {
+  margin: 8px 0 12px;
+  background: var(--bg);
+}
+.topic-picker .toolbar input[type="text"],
+.topic-picker .toolbar input:not([type]) {
+  min-width: 220px;
+}
+.picker-tree {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 8px 12px;
+}
+.picker-chapter {
+  display: block;
+  font-weight: 600;
+  margin: 8px 0 2px;
+}
+.picker-topic {
+  padding: 2px 0;
+}
+.picker-topic.indent {
+  padding-left: 22px;
+}
+.picker-topic > label {
+  margin-right: 8px;
+}
+.picker-dang {
+  display: flex;
+  flex-direction: column;
+  padding-left: 26px;
+  font-size: 14px;
+}
+.picker-defaults {
+  flex-wrap: wrap;
+}
