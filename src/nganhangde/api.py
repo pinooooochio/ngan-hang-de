@@ -79,6 +79,8 @@ def question_json(q: Question, full: bool = True) -> dict:
         "stem": q.stem_latex,
         "tags": [{"path": t.path, "names": bank.tag_names(t)} for t in q.tags],
         "updated_at": q.updated_at.isoformat(timespec="seconds") if q.updated_at else None,
+        "variant_group": q.variant_group,
+        "check_note": q.check_note,
     }
     if full:
         data.update(
@@ -168,6 +170,7 @@ class SectionIn(BaseModel):
 
 class ExamIn(BaseModel):
     title: str = Field(min_length=1)
+    vary: bool = True  # đổi biến thể mỗi lần học viên làm
     date: str | None = None
     duration: int | None = None
     variants: int = Field(1, ge=1, le=30)
@@ -244,6 +247,7 @@ def exam_json(exam: Exam, full: bool = False) -> dict:
         "n_questions": len(exam.items),
         "builds": counts,
         "published": bool(exam.published),
+        "vary": bool(exam.vary),
     }
     if full:
         data.update(
@@ -317,6 +321,7 @@ class GenParamsIn(BaseModel):
     count: int = Field(10, ge=1, le=aigen.MAX_COUNT)
     notes: str | None = None
     figure: bool = False
+    variant_of: str | None = None  # mã câu gốc khi sinh biến thể
 
 
 class GenCheckIn(BaseModel):
@@ -402,6 +407,10 @@ class UserUpdateIn(BaseModel):
 
 class PublishIn(BaseModel):
     published: bool
+
+
+class VaryIn(BaseModel):
+    vary: bool
 
 
 class DecisionIn(BaseModel):
@@ -644,14 +653,21 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         status: Status | None = None,
         q: str | None = None,
         source: str | None = None,
+        group: str | None = None,
         limit: int = 50,
         offset: int = 0,
         session: Session = S,
     ):
-        stmt = bank.question_query(tag, level, type, status, q, source)
+        stmt = bank.question_query(tag, level, type, status, q, source, group)
         total = session.scalar(select(func.count()).select_from(stmt.subquery()))
-        rows = session.scalars(stmt.order_by(Question.updated_at.desc(), Question.id.desc()).limit(limit).offset(offset))
-        return {"total": total, "items": [question_json(r, full=False) for r in rows]}
+        rows = list(session.scalars(stmt.order_by(Question.updated_at.desc(), Question.id.desc()).limit(limit).offset(offset)))
+        groups = {r.variant_group for r in rows if r.variant_group}
+        sizes = dict(session.execute(
+            select(Question.variant_group, func.count()).where(Question.variant_group.in_(groups))
+            .group_by(Question.variant_group)
+        ).all()) if groups else {}
+        items = [{**question_json(r, full=False), "n_variants": sizes.get(r.variant_group, 1)} for r in rows]
+        return {"total": total, "items": items}
 
     @app.get("/api/questions/codes", dependencies=[STAFF])
     def question_codes(
@@ -661,10 +677,11 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         status: Status | None = None,
         q: str | None = None,
         source: str | None = None,
+        group: str | None = None,
         session: Session = S,
     ):
         """Mã mọi câu khớp bộ lọc (không phân trang), để chọn tất cả rồi sửa hàng loạt."""
-        stmt = bank.question_query(tag, level, type, status, q, source)
+        stmt = bank.question_query(tag, level, type, status, q, source, group)
         return list(session.scalars(stmt.with_only_columns(Question.code).order_by(Question.code)))
 
     @app.get("/api/questions/{code}", dependencies=[STAFF])
@@ -672,7 +689,9 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         q = bank.get_question(session, code)
         if q is None:
             raise HTTPException(404, f"không có câu {code}")
-        return question_json(q)
+        members = bank.variant_members(session, q)
+        return {**question_json(q), "n_variants": len(members),
+                "variants": [{"code": m.code, "status": m.status.value} for m in members]}
 
     def check_status(user: User, status: Status | None) -> None:
         if status == Status.APPROVED and user.role != Role.ADMIN:
@@ -701,6 +720,8 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         pq = parse_one(body.source)
         try:
             q = bank.update_question(session, code, pq)
+            if question_to_ex(q) != before:
+                q.check_note = None  # đã sửa: cảnh báo lúc sinh không còn đúng
             if body.status:
                 q.status = body.status
                 session.commit()
@@ -712,6 +733,29 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         if q.status != old_status:
             log(session, user, [q.code], "duyet" if q.status == Status.APPROVED else "bo-duyet")
         return question_json(q)
+
+    @app.get("/api/questions/{code}/variant-params", dependencies=[STAFF])
+    def variant_params(code: str, count: int = 5, session: Session = S):
+        """Tham số để sinh biến thể (cùng dạng, khác số liệu) cho câu này."""
+        try:
+            return aigen.variant_params(session, code, count)
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+
+    @app.post("/api/questions/group/{group}/approve")
+    def approve_group(group: str, user: User = ADMIN, session: Session = S):
+        """Duyệt mọi câu nháp của một nhóm biến thể, trừ câu còn cảnh báo lúc sinh (hình lỗi, đáp án tự
+        kiểm không khớp): những câu đó phải mở ra sửa hoặc duyệt từng câu."""
+        rows = list(session.scalars(select(Question).where(Question.variant_group == group,
+                                                           Question.status == Status.DRAFT)
+                                    .order_by(Question.code)))
+        ok = [q for q in rows if not q.check_note]
+        for q in ok:
+            q.status = Status.APPROVED
+        session.commit()
+        if ok:
+            log(session, user, [q.code for q in ok], "duyet", f"duyệt cả nhóm {group}")
+        return {"approved": len(ok), "skipped": [q.code for q in rows if q.check_note]}
 
     @app.get("/api/questions/{code}/log", dependencies=[STAFF])
     def question_log(code: str, session: Session = S):
@@ -926,13 +970,15 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     @app.post("/api/exams/availability", dependencies=[STAFF])
     def availability(body: AvailabilityIn, session: Session = S):
-        """Số câu đã duyệt hiện có cho từng dòng ma trận, và các mã câu chọn tay không dùng được."""
+        """Số câu đã duyệt hiện có cho từng dòng ma trận (kèm số câu chưa từng dùng trong đề hay lượt
+        luyện nào), và các mã câu chọn tay không dùng được."""
+        usage = generator.usage_counts(session)
         out = []
         for sec in body.sections:
-            rows = [
-                len(bank.find_questions(session, tag=p.tag, level=p.level, type=sec.type, approved_only=True))
-                for p in sec.pick
-            ]
+            pools = [bank.find_questions(session, tag=p.tag, level=p.level, type=sec.type, approved_only=True)
+                     for p in sec.pick]
+            rows = [len(pool) for pool in pools]
+            unused = [sum(1 for q in pool if not usage.get(q.code)) for pool in pools]
             problems = []
             for code in sec.ids:
                 q = bank.get_question(session, code)
@@ -940,7 +986,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
                     problems.append(f"không có câu {code}")
                 elif q.type != sec.type:
                     problems.append(f"câu {code} không đúng loại của phần này")
-            out.append({"rows": rows, "problems": problems})
+            out.append({"rows": rows, "unused": unused, "problems": problems})
         return {"sections": out}
 
     # ---------- Khung đề ----------
@@ -1037,6 +1083,13 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     def publish_exam(exam_id: int, body: PublishIn, session: Session = S):
         exam = load_exam(session, exam_id)
         exam.published = body.published
+        session.commit()
+        return exam_json(exam)
+
+    @app.put("/api/exams/{exam_id}/vary", dependencies=[STAFF])
+    def set_vary(exam_id: int, body: VaryIn, session: Session = S):
+        exam = load_exam(session, exam_id)
+        exam.vary = body.vary
         session.commit()
         return exam_json(exam)
 
@@ -1148,17 +1201,17 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
                 exam = load_exam(session, body.exam_id)
                 if not is_staff(user) and not exam.published:
                     raise HTTPException(404, f"không có đề #{body.exam_id}")
-                a = practice.start_from_exam(session, exam, body.variant, body.timed)
+                a = practice.start_from_exam(session, exam, body.variant, body.timed, user.id)
             elif body.retry_of is not None:
                 check_quick(session, user)
-                spec = practice.retry_spec(load_attempt(session, body.retry_of, user, write=True))
-                a = practice.start_quick(session, spec)
+                spec = practice.retry_spec(load_attempt(session, body.retry_of, user, write=True), session, user.id)
+                a = practice.start_quick(session, spec, user_id=user.id)
             elif body.quick is not None:
                 check_quick(session, user)
                 qk = body.quick
                 counts = {"mcq": qk.mcq, "tf": qk.tf, "short": qk.short, "essay": qk.essay}
                 spec = practice.quick_spec(qk.title, qk.tag, qk.level.value if qk.level else None, counts)
-                a = practice.start_quick(session, spec, qk.duration)
+                a = practice.start_quick(session, spec, qk.duration, user.id)
             else:
                 raise HTTPException(422, "cần exam_id, quick hoặc retry_of")
         except practice.PracticeError as e:

@@ -12,6 +12,7 @@ import ExamDetailPage from "./pages/ExamDetailPage";
 import ExamListPage from "./pages/ExamListPage";
 import ExamNewPage from "./pages/ExamNewPage";
 import GenBatchPage from "./pages/GenBatchPage";
+import VariantPage from "./pages/VariantPage";
 import GeneratePage from "./pages/GeneratePage";
 import ImportPage from "./pages/ImportPage";
 import LoginPage from "./pages/LoginPage";
@@ -40,6 +41,7 @@ function Guarded() {
       <Route path="/de/:id" element={<ExamDetailPage />} />
       <Route path="/sinh" element={<GeneratePage />} />
       <Route path="/sinh/:id" element={<GenBatchPage />} />
+      <Route path="/sinh/bien-the/:code" element={<VariantPage />} />
       <Route path="/luyen" element={<PracticeHomePage />} />
       <Route path="/luyen/ket-qua" element={<PracticeResultsPage />} />
       <Route path="/luyen/:id" element={<AttemptPage />} />

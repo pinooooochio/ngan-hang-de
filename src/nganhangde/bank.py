@@ -330,6 +330,7 @@ def question_query(
     status: Status | None = None,
     text: str | None = None,
     source: str | None = None,
+    group: str | None = None,
 ) -> Select:
     """Câu truy vấn lọc câu hỏi. `tag` là đường dẫn slug hoặc tên; khớp cả các nút con."""
     stmt = select(Question)
@@ -341,6 +342,8 @@ def question_query(
         stmt = stmt.where(Question.type == type)
     if status:
         stmt = stmt.where(Question.status == status)
+    if group:
+        stmt = stmt.where(Question.variant_group == group)
     if source:
         # nhiều nguồn ngăn bởi "|" (ví dụ các lần sinh của một đợt: "AI #3|AI #4")
         sources = [s for s in source.split("|") if s]
@@ -389,6 +392,13 @@ def tag_tree(session: Session, order: dict[str, int] | None = None) -> list[tupl
     for root in children.get(None, []):
         visit(root, 0)
     return out
+
+
+def variant_members(session: Session, q: Question) -> list[Question]:
+    """Các câu cùng nhóm biến thể với `q` (gồm cả `q`); câu chưa có nhóm thì chỉ có chính nó."""
+    if not q.variant_group:
+        return [q]
+    return list(session.scalars(select(Question).where(Question.variant_group == q.variant_group).order_by(Question.id)))
 
 
 def tag_names(node: TaxonomyNode) -> list[str]:

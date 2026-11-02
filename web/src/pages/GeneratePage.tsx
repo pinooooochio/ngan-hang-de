@@ -507,6 +507,11 @@ export function GenItems({ items }: { items: GenItem[] }) {
               </Link>
             )}
             {it.duplicate_of && <span className="muted small">trùng câu {it.duplicate_of}</span>}
+            {it.answer_checked && !it.answer_errors?.length && (
+              <span className="badge approved" title="Máy chủ đã tính lại đáp án theo dòng @kiemtra và thấy khớp">
+                Đáp án đã tự kiểm
+              </span>
+            )}
             <span className="muted small">{it.tags.map((t) => t.join(" › ")).join("; ")}</span>
           </div>
           <Tex source={it.stem} />
@@ -518,6 +523,11 @@ export function GenItems({ items }: { items: GenItem[] }) {
           {it.figure_errors?.map((e) => (
             <div key={e} className="alert error small">
               {e}. Câu vẫn được lưu vào nháp, cần sửa hình trước khi duyệt.
+            </div>
+          ))}
+          {it.answer_errors?.map((e) => (
+            <div key={e} className="alert error small">
+              Kiểm đáp án: {e}. Câu vẫn được lưu vào nháp, cần xem lại đáp án trước khi duyệt.
             </div>
           ))}
           {it.warnings.map((w) => (

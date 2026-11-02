@@ -129,3 +129,11 @@ def test_quick_practice(client):
     assert client.post("/api/attempts", json={}).status_code == 422
     assert client.delete(f"/api/attempts/{a['id']}").status_code == 204
     assert client.get(f"/api/attempts/{a['id']}").status_code == 404
+
+
+def test_quick_practice_prefers_unseen_questions(client):
+    first = client.post("/api/attempts", json={"quick": {"mcq": 3}}).json()
+    second = client.post("/api/attempts", json={"quick": {"mcq": 3}}).json()
+    codes = lambda a: {q["code"] for s in a["data"]["sections"] for q in s["questions"]}  # noqa: E731
+    assert len(codes(first)) == 3 and not codes(first) & codes(second)
+    assert first["data"]["seen_before"] == 0 and second["data"]["seen_before"] == 0
