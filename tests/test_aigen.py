@@ -507,3 +507,61 @@ def test_bulk_variants_api_mode_one_batch_per_pack(app, monkeypatch):
     g = c.post("/api/gen/variants/batches", json={"codes": ["12V-001", "12V-002", "12V-004"], "per": 10}).json()
     assert len(g["batches"]) == 2 and len({b["group_id"] for b in g["batches"]}) == 1
     assert g["batches"][0]["params"]["variants_of"] == ["12V-001", "12V-004"]
+
+
+TEMPLATE = r"""% @bienthe: 12V-001
+% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: NB
+% @thamso: a = 1..4; b = -3..3; c = -3..3
+% @dieukien: c != 0
+% @tinh: d = 2*a + c
+\begin{ex}
+  Trong không gian $Oxyz$, cho $\vec u=({{a}};{{b}};{{c}})$ và $\vec v=(2;0;1)$. Tích vô hướng $\vec u\cdot\vec v$ bằng
+  \choice{${{d - 1}}$}{\True ${{d}}$}{${{d + 1}}$}{${{d + 2}}$}
+  \loigiai{$\vec u\cdot\vec v = {{a}}\cdot 2 + {{b:()}}\cdot 0 + {{c:()}}\cdot 1 = {{d}}$.}
+\end{ex}
+
+% @bienthe: 12V-004
+% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: TH
+\begin{ex}
+  Câu chưa tham số hoá. \choice{\True $1$}{$2$}{$3$}{$4$}
+\end{ex}
+"""
+
+
+def test_convert_to_param_questions(app):
+    c = app.state.client
+    body = {"codes": ["12V-001", "12V-004"], "per": 5, "param": True}
+    parts = c.post("/api/gen/variants/prompts", json=body).json()["parts"]
+    assert len(parts) == 1 and parts[0]["count"] == 2  # mỗi câu gốc đúng một mẫu
+    assert "# Câu tham số" in parts[0]["combined"] and "% @bienthe: 12V-004" in parts[0]["combined"]
+    items = c.post("/api/gen/variants/check", json={**body, "output": TEMPLATE}).json()
+    assert [it["state"] for it in items] == ["new", "error"]
+    assert items[0]["param"] and items[0]["answer_checked"] and not items[0]["answer_errors"]
+    assert any("@thamso" in e for e in items[1]["errors"])
+    g = c.post("/api/gen/variants/batches", json={**body, "mode": "manual", "output": TEMPLATE}).json()
+    assert g["batches"][0]["n_added"] == 1
+    new = c.get(f"/api/gen/batches/{g['batches'][0]['id']}").json()["items"][0]["code"]
+    q = c.get(f"/api/questions/{new}").json()
+    assert q["params"] and q["status"] == "draft"
+    assert q["variant_group"] == c.get("/api/questions/12V-001").json()["variant_group"]
+    # câu tự luận / đúng sai, câu đã là câu tham số thì không chuyển được
+    assert c.post("/api/gen/variants/prompts", json={"codes": [new], "per": 1, "param": True}).status_code == 422
+
+
+NEW_TEMPLATE = TEMPLATE.split("\n\n% @bienthe: 12V-004")[0].replace("% @bienthe: 12V-001\n", "")
+
+
+def test_generate_new_param_questions(app):
+    c = app.state.client
+    p = {**PARAMS, "level": "NB", "count": 1, "param": True}
+    prompt = c.post("/api/gen/prompt", json=p).json()
+    assert "# Câu tham số" in prompt["combined"] and "mẫu câu tham số mới" in prompt["combined"]
+    b = c.post("/api/gen/batches", json={"params": p, "mode": "manual", "output": NEW_TEMPLATE}).json()
+    assert b["n_added"] == 1
+    plain = c.post("/api/gen/check", json={"params": p, "output": OUTPUT.split("```\n")[0] + "```"}).json()
+    assert any("@thamso" in e for e in plain[0]["errors"])
+    tf = {**p, "type": "tf"}
+    assert c.post("/api/gen/prompt", json=tf).status_code == 422
+    # prompt gộp nhiều ô: quy tắc câu tham số ghi một lần
+    multi = c.post("/api/gen/prompt/multi", json={"rows": [p, {**p, "level": "TH"}]}).json()
+    assert multi["combined"].count("# Câu tham số") == 1

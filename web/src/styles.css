@@ -1607,3 +1607,19 @@ button.badge.variant:hover {
 details.hint summary {
   cursor: pointer;
 }
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.segmented button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.segmented button.active {
+  background: #e8f0fe;
+  color: #1a56c4;
+  font-weight: 600;
+}

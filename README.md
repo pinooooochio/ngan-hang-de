@@ -252,6 +252,13 @@ Câu tham số là một mẫu câu có chỗ để thay số. Mỗi mã đề v
   3 bộ số khác nhau, hoặc phương án trùng nhau / trùng đáp án. Khung xem trước hiện 3 bản mẫu và nút "Bộ số khác".
 - Trong ngân hàng, câu tham số có nhãn "Câu tham số" và hiện một bộ số mẫu. Bản PDF của đề giữ đúng bộ số của
   từng mã đề. Câu tham số không cần sinh biến thể bằng Claude nên bị bỏ qua khi sinh biến thể hàng loạt.
+- Claude soạn câu tham số theo hai cách:
+  - **Sinh mới**: ở trang Sinh câu AI, tick cột "Câu tham số" của dòng (hoặc ô "Câu tham số" trong hộp Thêm chủ đề).
+    Chỉ áp dụng cho trắc nghiệm và trả lời ngắn, không có hình. Câu thiếu dòng `@thamso` hoặc mẫu không bốc được
+    bộ số hợp lệ bị báo lỗi và không lưu.
+  - **Chuyển câu có sẵn**: trang `/sinh/bien-the`, chế độ "Chuyển thành câu tham số" (hoặc nút cùng tên ở thanh chọn
+    câu của ngân hàng và ở trang soạn câu). Mỗi câu gốc đã duyệt thành một mẫu, vào nháp, cùng nhóm biến thể với câu
+    gốc nên mỗi đề vẫn chỉ lấy một câu của nhóm.
 
 ## Cấu hình đề
 

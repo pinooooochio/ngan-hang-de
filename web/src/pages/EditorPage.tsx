@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, levelLabel, typeLabel, type LogEntry, type Parsed, type Question, type Status } from "../api";
 import ParamPreview from "../components/ParamPreview";
+import { PICKED_KEY } from "./BulkVariantPage";
 import QuestionView from "../components/QuestionView";
 import { useAuth } from "../auth";
 import { LogTable } from "./LogPage";
@@ -176,6 +177,21 @@ export default function EditorPage() {
           <Link className="button" to={`/sinh/bien-the/${encodeURIComponent(code)}`} title="Soạn thêm câu cùng dạng, khác số liệu">
             Sinh biến thể
           </Link>
+        )}
+        {code && question && !question.params && question.status === "approved" && (question.type === "mcq" || question.type === "short") && (
+          <button
+            title="Claude viết lại câu này thành câu tham số (đổi số mỗi lần ra đề)"
+            onClick={() => {
+              try {
+                sessionStorage.setItem(PICKED_KEY, JSON.stringify([code]));
+              } catch {
+                /* không lưu được thì trang chuyển sẽ không có câu đã chọn */
+              }
+              navigate("/sinh/bien-the?chon=1&thamso=1");
+            }}
+          >
+            Chuyển thành câu tham số
+          </button>
         )}
         {code && admin && (
           <button className="danger" onClick={remove}>

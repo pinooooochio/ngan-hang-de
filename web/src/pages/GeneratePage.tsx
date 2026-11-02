@@ -49,7 +49,9 @@ function splitParts<T extends { count: number }>(rows: T[], limit: number): T[][
 }
 
 /** Ước lượng token ra cho một câu (câu có hình dài hơn vì mã TikZ). */
-const outTokens = (r: GenParams) => r.count * (r.figure ? 900 : 450);
+const outTokens = (r: GenParams) => r.count * (r.figure ? 900 : r.param ? 650 : 450);
+/** Loại câu soạn được dạng câu tham số. */
+export const paramOk = (t: QType) => t === "mcq" || t === "short";
 
 function readTarget() {
   try {
@@ -135,6 +137,7 @@ export default function GeneratePage() {
       type: last?.type ?? "mcq",
       count: defaultCount,
       figure: last?.figure,
+      param: last?.param,
       ...patch,
     };
   };
@@ -174,7 +177,7 @@ export default function GeneratePage() {
     const next = [...rows];
     for (const a of add) {
       const i = next.findIndex(
-        (r) => r.grade === a.grade && r.topic === a.topic && (r.dang ?? "") === (a.dang ?? "") && r.level === a.level && r.type === a.type,
+        (r) => r.grade === a.grade && r.topic === a.topic && (r.dang ?? "") === (a.dang ?? "") && r.level === a.level && r.type === a.type && !!r.param === !!a.param,
       );
       if (i >= 0) next[i] = { ...next[i], count: Math.min(maxCount, next[i].count + a.count) };
       else next.push({ ...a, key: nextKey++ });
@@ -261,6 +264,9 @@ export default function GeneratePage() {
         <span className="spacer" />
         <Link className="button" to="/sinh/bien-the" title="Sinh câu cùng dạng, khác số liệu cho nhiều câu đã duyệt">
           Sinh biến thể hàng loạt
+        </Link>
+        <Link className="button" to="/sinh/bien-the?thamso=1" title="Claude viết lại các câu đã duyệt thành câu tham số">
+          Chuyển câu có sẵn thành câu tham số
         </Link>
       </div>
       <p className="hint">
@@ -396,6 +402,9 @@ export default function GeneratePage() {
                 <th>Loại câu</th>
                 <th>Số câu</th>
                 <th title="Mỗi câu có hình vẽ TikZ (đồ thị, bảng biến thiên, hình phẳng, hình không gian)">Có hình</th>
+                <th title="Claude soạn mẫu câu tham số: mỗi lần ra đề tự bốc số mới, đáp án tính lại theo công thức. Chỉ trắc nghiệm và trả lời ngắn, không có hình.">
+                  Câu tham số
+                </th>
                 <th />
               </tr>
             </thead>
@@ -438,7 +447,13 @@ export default function GeneratePage() {
                       </select>
                     </td>
                     <td>
-                      <select value={r.type} onChange={(e) => updateRow(r.key, { type: e.target.value as QType })}>
+                      <select
+                        value={r.type}
+                        onChange={(e) => {
+                          const t = e.target.value as QType;
+                          updateRow(r.key, { type: t, param: paramOk(t) ? r.param : undefined });
+                        }}
+                      >
                         {TYPES.map((t) => (
                           <option key={t.value} value={t.value}>
                             {t.label}
@@ -460,7 +475,18 @@ export default function GeneratePage() {
                       <input
                         type="checkbox"
                         checked={!!r.figure}
+                        disabled={!!r.param}
                         onChange={(e) => updateRow(r.key, { figure: e.target.checked || undefined })}
+                      />
+                    </td>
+                    <td className="center">
+                      <input
+                        type="checkbox"
+                        checked={!!r.param}
+                        disabled={!paramOk(r.type)}
+                        onChange={(e) =>
+                          updateRow(r.key, { param: e.target.checked || undefined, figure: e.target.checked ? undefined : r.figure })
+                        }
                       />
                     </td>
                     <td>
@@ -627,15 +653,25 @@ export function GenItems({ items }: { items: GenItem[] }) {
               </Link>
             )}
             {it.duplicate_of && <span className="muted small">trùng {/^[A-Z0-9-]+$/.test(it.duplicate_of) ? `câu ${it.duplicate_of}` : it.duplicate_of}</span>}
-            {it.variant_of && <span className="badge variant-of">biến thể của {it.variant_of}</span>}
-            {it.answer_checked && !it.answer_errors?.length && (
+            {it.variant_of && (
+              <span className="badge variant-of">
+                {it.param ? "câu tham số từ" : "biến thể của"} {it.variant_of}
+              </span>
+            )}
+            {it.param && !it.variant_of && <span className="badge param">Câu tham số</span>}
+            {it.param && it.state !== "error" && (
+              <span className="badge approved" title="Đáp án tính từ công thức; máy đã bốc thử nhiều bộ số và thấy hợp lệ">
+                Mẫu đã bốc thử
+              </span>
+            )}
+            {!it.param && it.answer_checked && !it.answer_errors?.length && (
               <span className="badge approved" title="Máy chủ đã tính lại đáp án theo dòng @kiemtra và thấy khớp">
                 Đáp án đã tự kiểm
               </span>
             )}
             <span className="muted small">{it.tags.map((t) => t.join(" › ")).join("; ")}</span>
           </div>
-          <Tex source={it.stem} />
+          <Tex source={it.sample_stem ?? it.stem} />
           {it.errors.map((e) => (
             <div key={e} className="alert error small">
               {e}
