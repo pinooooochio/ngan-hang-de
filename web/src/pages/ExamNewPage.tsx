@@ -58,9 +58,10 @@ export default function ExamNewPage() {
   const [duration, setDuration] = useState<number | "">(90);
   const [variants, setVariants] = useState(4);
   const [firstCode, setFirstCode] = useState(101);
+  const [vary, setVary] = useState(true);
   const [sections, setSections] = useState<SectionSpec[]>(THPT_2025);
   const [tags, setTags] = useState<TagNode[]>([]);
-  const [avail, setAvail] = useState<{ rows: number[]; problems: string[] }[]>([]);
+  const [avail, setAvail] = useState<{ rows: number[]; unused?: number[]; problems: string[] }[]>([]);
   const [picked, setPicked] = useState<Record<string, QuestionSummary>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -224,6 +225,7 @@ export default function ExamNewPage() {
         duration: duration === "" ? undefined : duration,
         variants,
         first_code: firstCode,
+        vary,
         sections: sections.map((s) => ({ ...s, pick: s.pick.filter((r) => r.count > 0) })),
       });
       navigate(`/de/${exam.id}`);
@@ -259,6 +261,17 @@ export default function ExamNewPage() {
           <input type="number" value={firstCode} onChange={(e) => setFirstCode(Number(e.target.value))} />
         </label>
       </div>
+      <label className="inline vary-toggle">
+        <input type="checkbox" checked={vary} onChange={(e) => setVary(e.target.checked)} /> Đổi biến thể mỗi lần làm
+        <span className="muted small">
+          {" "}
+          (khi học viên luyện đề này, câu có nhóm biến thể được thay bằng biến thể họ chưa làm; bản PDF in ra vẫn giữ nguyên)
+        </span>
+      </label>
+      <p className="hint">
+        Mỗi đề lấy tối đa một câu của một nhóm biến thể, và ưu tiên câu ít được dùng nhất (trong các đề đã ghép và các lượt
+        luyện).
+      </p>
 
       <section className="section-card template-bar">
         <div className="toolbar">
@@ -363,6 +376,7 @@ export default function ExamNewPage() {
             <tbody>
               {s.pick.map((r, k) => {
                 const have = avail[i]?.rows[k];
+                const unused = avail[i]?.unused?.[k];
                 return (
                   <tr key={k}>
                     <td>
@@ -383,6 +397,11 @@ export default function ExamNewPage() {
                     </td>
                     <td className={have !== undefined && have < r.count ? "short" : "muted"}>
                       {have === undefined ? "…" : `${have} câu ${typeLabel(s.type).toLowerCase()}`}
+                      {unused !== undefined && have !== undefined && have > 0 && (
+                        <div className={`small ${unused < r.count ? "warn-text" : "muted"}`} title="Câu chưa nằm trong đề nào và chưa ai luyện">
+                          {unused} câu chưa dùng
+                        </div>
+                      )}
                     </td>
                     <td>
                       <button className="link" onClick={() => updateSection(i, { pick: s.pick.filter((_, x) => x !== k) })}>

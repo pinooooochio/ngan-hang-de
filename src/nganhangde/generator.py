@@ -22,13 +22,15 @@ from __future__ import annotations
 import random
 import tomllib
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .bank import find_questions
-from .models import Exam, ExamItem, ExamVariant, Level, Question, QuestionType
+from .models import AttemptItem, Exam, ExamItem, ExamVariant, Level, Question, QuestionType
 
 LETTERS = "ABCD"
 MAX_RUN = 3  # không quá 3 câu liên tiếp cùng chữ cái đáp án
@@ -43,10 +45,52 @@ def load_spec(path: str | Path) -> dict:
         return tomllib.load(f)
 
 
-def select_questions(session: Session, spec: dict) -> list[list[Question]]:
-    """Chọn câu cho từng phần. Kết quả giống nhau cho mọi mã đề."""
+def usage_counts(session: Session) -> dict[str, int]:
+    """Số lần mỗi câu đã được dùng: có trong đề đã ghép, hoặc đã được làm trong một lượt luyện."""
+    counts: Counter[str] = Counter()
+    for code, n in session.execute(
+        select(Question.code, func.count()).join(ExamItem, ExamItem.question_id == Question.id).group_by(Question.code)
+    ):
+        counts[code] += n
+    for code, n in session.execute(select(AttemptItem.question_code, func.count()).group_by(AttemptItem.question_code)):
+        counts[code] += n
+    return dict(counts)
+
+
+def pick(pool: list[Question], count: int, rng: random.Random, rank: Callable[[Question], Any] | None,
+         groups: set[str]) -> list[Question]:
+    """Chọn `count` câu: ưu tiên theo `rank` (nhỏ trước, cùng hạng thì ngẫu nhiên), mỗi nhóm biến thể
+    tối đa một câu; nếu không đủ nhóm khác nhau thì mới lấy thêm câu cùng nhóm."""
+    pool = list(pool)
+    rng.shuffle(pool)
+    if rank is not None:
+        pool.sort(key=rank)
+    picked = []
+    for q in pool:
+        if len(picked) == count:
+            break
+        if q.variant_group and q.variant_group in groups:
+            continue
+        picked.append(q)
+        if q.variant_group:
+            groups.add(q.variant_group)
+    for q in pool:
+        if len(picked) == count:
+            break
+        if q not in picked:
+            picked.append(q)
+    return picked
+
+
+def select_questions(session: Session, spec: dict, rank: Callable[[Question], Any] | None = None) -> list[list[Question]]:
+    """Chọn câu cho từng phần. Kết quả giống nhau cho mọi mã đề. Mặc định ưu tiên câu ít được dùng
+    (ít có trong đề cũ và ít được làm) để học viên ít gặp lại câu cũ."""
     rng = random.Random(f"{spec.get('seed', 0)}-chon-cau")
+    if rank is None:
+        usage = usage_counts(session)
+        rank = lambda q: usage.get(q.code, 0)  # noqa: E731
     used: set[int] = set()
+    groups: set[str] = set()
     sections: list[list[Question]] = []
     problems: list[str] = []
     for si, sec in enumerate(spec.get("section", []), 1):
@@ -64,6 +108,8 @@ def select_questions(session: Session, spec: dict) -> list[list[Question]]:
             else:
                 chosen.append(q)
                 used.add(q.id)
+                if q.variant_group:
+                    groups.add(q.variant_group)
         for cell in sec.get("pick", []):
             level = Level(cell["level"]) if cell.get("level") else None
             count = int(cell.get("count", 1))
@@ -76,7 +122,7 @@ def select_questions(session: Session, spec: dict) -> list[list[Question]]:
                 label = f"thẻ {cell.get('tag') or '(mọi)'}, mức {cell.get('level') or '(mọi)'}"
                 problems.append(f"Phần {si}: {label} cần {count} câu, ngân hàng chỉ còn {len(pool)}")
                 continue
-            picked = rng.sample(pool, count)
+            picked = pick(pool, count, rng, rank, groups)
             chosen.extend(picked)
             used.update(q.id for q in picked)
         sections.append(chosen)
@@ -213,6 +259,7 @@ def build_exam(session: Session, spec: dict) -> Exam:
         exam_date=str(spec.get("date", "")) or None,
         duration=spec.get("duration"),
         config=spec,
+        vary=bool(spec.get("vary", True)),
     )
     for si, (sec, qs) in enumerate(zip(spec.get("section", []), sections)):
         for pi, q in enumerate(qs):

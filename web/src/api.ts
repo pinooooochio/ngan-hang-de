@@ -23,6 +23,12 @@ export interface QuestionSummary {
   stem: string;
   tags: TagRef[];
   updated_at: string | null;
+  /** Mã nhóm biến thể (cùng dạng, khác số liệu); null nếu câu đứng riêng. */
+  variant_group: string | null;
+  /** Cảnh báo lúc sinh (hình lỗi, đáp án tự kiểm không khớp); xoá khi câu được sửa. */
+  check_note: string | null;
+  /** Số câu trong nhóm biến thể (kể cả câu này). */
+  n_variants?: number;
 }
 
 export interface Question extends QuestionSummary {
@@ -32,6 +38,7 @@ export interface Question extends QuestionSummary {
   source: string | null;
   version: number;
   ex_source: string;
+  variants?: { code: string; status: Status }[];
 }
 
 export interface Parsed {
@@ -78,6 +85,7 @@ export interface SectionSpec {
 
 export interface ExamSpec {
   title: string;
+  vary?: boolean;
   date?: string;
   duration?: number;
   variants: number;
@@ -139,6 +147,8 @@ export interface ExamSummary {
   n_questions: number;
   builds: Record<BuildState, number>;
   published: boolean;
+  /** Đổi biến thể mỗi lần học viên làm đề. */
+  vary: boolean;
   /** Chỉ có khi học viên xem: file được tải và yêu cầu tải đáp án. */
   files?: ExamFile[];
   request?: { status: RequestStatus; note: string | null } | null;
@@ -191,7 +201,7 @@ export interface AttemptResult {
 }
 
 export interface AttemptDetail extends AttemptSummary {
-  data: { title: string; sections: { name: string; type: QType; points: number | null; questions: AttemptQuestion[] }[] };
+  data: { title: string; seen_before?: number; sections: { name: string; type: QType; points: number | null; questions: AttemptQuestion[] }[] };
   answers: Record<string, Answer>;
   results: Record<string, AttemptResult> | null;
   server_time: string;
@@ -270,6 +280,8 @@ export interface GenParams {
   notes?: string;
   /** Mỗi câu phải có hình vẽ TikZ. */
   figure?: boolean;
+  /** Mã câu gốc khi sinh biến thể. */
+  variant_of?: string;
 }
 
 export interface GenItem {
@@ -283,6 +295,10 @@ export interface GenItem {
   warnings: string[];
   /** Hình vẽ không biên dịch được (lần sinh cũ không có). */
   figure_errors?: string[];
+  /** Đáp án tự kiểm (dòng @kiemtra) không khớp. */
+  answer_errors?: string[];
+  /** Có dòng @kiemtra và đã tính lại. */
+  answer_checked?: boolean;
   duplicate_of: string | null;
   code: string | null;
 }
@@ -501,7 +517,7 @@ export const api = {
   }) => request<{ added: string[]; duplicates: number; failed: number }>("POST", "/api/import/commit", body),
   previewPdf: (source: string) => request<Blob>("POST", "/api/preview/pdf", { source }),
   availability: (sections: SectionSpec[]) =>
-    request<{ sections: { rows: number[]; problems: string[] }[] }>("POST", "/api/exams/availability", { sections }),
+    request<{ sections: { rows: number[]; unused: number[]; problems: string[] }[] }>("POST", "/api/exams/availability", { sections }),
   me: () => request<Me>("GET", "/api/auth/me"),
   setup: (body: { username: string; password: string; display_name?: string }) =>
     request<UserRow>("POST", "/api/auth/setup", body),
@@ -524,6 +540,11 @@ export const api = {
       "GET",
       `/api/question-logs?offset=${offset}${username ? `&username=${encodeURIComponent(username)}` : ""}`,
     ),
+  variantParams: (code: string, count: number) =>
+    request<GenParams>("GET", `/api/questions/${encodeURIComponent(code)}/variant-params?count=${count}`),
+  approveGroup: (group: string) =>
+    request<{ approved: number; skipped: string[] }>("POST", `/api/questions/group/${encodeURIComponent(group)}/approve`),
+  setExamVary: (id: number, vary: boolean) => request<ExamSummary>("PUT", `/api/exams/${id}/vary`, { vary }),
   publishExam: (id: number, published: boolean) => request<ExamSummary>("PUT", `/api/exams/${id}/published`, { published }),
   requestAnswers: (id: number) => request<ExamSummary>("POST", `/api/exams/${id}/answer-request`),
   listRequests: (status?: RequestStatus) =>

@@ -135,6 +135,17 @@ Nên cho thư mục `backups` đồng bộ lên Google Drive / OneDrive (hoặc 
   được ép theo ô đã chọn. Câu hợp lệ vào ngân hàng ở trạng thái **nháp**, nguồn `AI #<số lần sinh>`; nút **Duyệt**
   mở ngân hàng lọc đúng các câu đó để đọc lại, sửa và duyệt. AI có thể sai, nên luôn đọc lời giải trước khi duyệt.
 
+  Mỗi câu có đáp án là số kèm dòng `% @kiemtra: <biểu thức tính từ số liệu> = <đáp số>`; máy chủ tự tính lại
+  biểu thức (bộ tính an toàn, không chạy mã) và so với đáp án trong câu. Câu lệch vẫn vào nháp nhưng mang cảnh báo
+  đỏ ở ngân hàng, cảnh báo tự mất khi sửa và lưu câu.
+
+- **Nhóm biến thể và chống lặp câu**: nút **Sinh biến thể** ở mỗi câu soạn thêm câu cùng dạng, cùng mức độ, chỉ đổi
+  số liệu (mặc định 5); câu gốc và biến thể chung một nhóm. Ở ngân hàng bấm nhãn "Nhóm biến thể" để lọc cả nhóm,
+  admin có nút **Duyệt cả nhóm** (bỏ qua câu còn cảnh báo). Khi ghép đề, mỗi đề lấy tối đa một câu của một nhóm và
+  ưu tiên câu ít được dùng nhất; ma trận hiện số câu "chưa dùng". Đề có công tắc **Đổi biến thể mỗi lần làm** (mặc
+  định bật): khi luyện, câu có nhóm được thay bằng biến thể người làm chưa gặp, PDF giữ nguyên. Luyện nhanh ưu tiên
+  câu chưa làm; luyện lại câu sai lấy biến thể khác của câu đó.
+
   Dòng lệnh: `nhd prompt --lop "Lớp 12" --chu-de "Nguyên hàm và tích phân" --muc TH --loai mcq --so 10` in prompt;
   `nhd sinh ...` (cùng tham số) gọi Claude API và lưu câu nháp.
 

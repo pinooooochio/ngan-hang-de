@@ -17,6 +17,7 @@ export default function BankPage() {
     status: params.get("trangthai") ?? "",
     q: params.get("tim") ?? "",
     source: params.get("nguon") ?? "",
+    group: params.get("nhom") ?? "",
     page: Number(params.get("trang") ?? "0"),
   };
   const [items, setItems] = useState<QuestionSummary[]>([]);
@@ -43,6 +44,7 @@ export default function BankPage() {
     status: filters.status,
     q: filters.q,
     source: filters.source,
+    group: filters.group,
   };
 
   const selectAll = async () => {
@@ -105,6 +107,19 @@ export default function BankPage() {
       setMessage(`Đã cập nhật ${r.updated} câu.`);
       await load();
       setSelected(new Set());
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
+  const approveGroup = async () => {
+    try {
+      const r = await api.approveGroup(filters.group);
+      setMessage(
+        `Đã duyệt ${r.approved} câu nháp của nhóm.` +
+          (r.skipped.length ? ` Chưa duyệt ${r.skipped.join(", ")} vì còn cảnh báo lúc sinh, cần mở ra xem và sửa.` : ""),
+      );
+      await load();
     } catch (e) {
       setError(String((e as Error).message));
     }
@@ -200,6 +215,24 @@ export default function BankPage() {
               )}
             </span>
           )}
+          {filters.group && (
+            <span className="tag">
+              Nhóm biến thể {filters.group}{" "}
+              <button className="link" onClick={() => setFilter("nhom", "")}>
+                ✕
+              </button>
+            </span>
+          )}
+          {filters.group && (
+            <Link className="small" to={`/sinh/bien-the/${encodeURIComponent(filters.group)}`}>
+              Sinh thêm biến thể
+            </Link>
+          )}
+          {filters.group && me.role === "admin" && items.some((q) => q.status === "draft") && (
+            <button className="small" onClick={approveGroup} title="Duyệt mọi câu nháp trong nhóm này">
+              Duyệt cả nhóm
+            </button>
+          )}
           {filters.source && (
             <span className="tag">
               Nguồn: {filters.source.split("|").join(", ")}{" "}
@@ -220,6 +253,15 @@ export default function BankPage() {
               <span className={`badge level-${q.level ?? "none"}`}>{levelLabel(q.level)}</span>
               <span className="badge">{typeLabel(q.type)}</span>
               {q.status === "draft" && <span className="badge draft">Nháp</span>}
+              {q.variant_group && (q.n_variants ?? 1) > 1 && !filters.group && (
+                <button
+                  className="badge variant"
+                  title="Các câu cùng dạng, khác số liệu. Mỗi đề chỉ lấy một câu của nhóm."
+                  onClick={() => setFilter("nhom", q.variant_group!)}
+                >
+                  Nhóm biến thể · {q.n_variants}
+                </button>
+              )}
               <span className="tags">
                 {q.tags.map((t) => (
                   <span key={t.path} className="tag" onClick={() => setFilter("the", t.path)}>
@@ -228,9 +270,15 @@ export default function BankPage() {
                 ))}
               </span>
             </div>
+            {q.check_note && <div className="alert error small">Cảnh báo lúc sinh: {q.check_note}</div>}
             <Link to={`/cau/${encodeURIComponent(q.code)}`} className="card-body">
               <Tex source={q.stem} />
             </Link>
+            <div className="card-foot">
+              <Link className="small" to={`/sinh/bien-the/${encodeURIComponent(q.code)}`}>
+                Sinh biến thể
+              </Link>
+            </div>
           </article>
         ))}
         {items.length === 0 && !error && (

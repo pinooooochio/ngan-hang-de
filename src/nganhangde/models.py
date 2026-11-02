@@ -91,6 +91,10 @@ class Question(Base):
     status: Mapped[Status] = mapped_column(Enum(Status), default=Status.APPROVED)
     version: Mapped[int] = mapped_column(Integer, default=1)
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    # nhóm biến thể: các câu cùng dạng, chỉ khác số liệu (mã nhóm = mã câu gốc)
+    variant_group: Mapped[str | None] = mapped_column(String(64), index=True)
+    # cảnh báo lúc sinh bằng AI (hình lỗi, đáp án tính lại không khớp); xoá khi câu được sửa
+    check_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -126,6 +130,8 @@ class Exam(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     # học viên chỉ thấy và làm được đề đã mở
     published: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # mỗi lượt làm, câu có nhóm biến thể được đổi sang biến thể người làm chưa gặp
+    vary: Mapped[bool] = mapped_column(Boolean, default=True, server_default=false())
 
     items: Mapped[list[ExamItem]] = relationship(
         back_populates="exam", order_by="ExamItem.position", cascade="all, delete-orphan"

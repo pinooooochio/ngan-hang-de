@@ -101,6 +101,18 @@ export default function ExamDetailPage() {
           · học viên thấy đề này ở trang Luyện đề, làm bài và tải file đề; đáp án, lời giải cần xin admin
         </span>
       </label>
+      <label className="inline publish-toggle">
+        <input
+          type="checkbox"
+          checked={exam.vary}
+          onChange={(e) => api.setExamVary(exam.id, e.target.checked).then((r) => setExam({ ...exam, vary: r.vary }))}
+        />{" "}
+        <b>Đổi biến thể mỗi lần làm</b>
+        <span className="muted">
+          {" "}
+          · khi luyện đề, câu có nhóm biến thể được thay bằng biến thể người làm chưa gặp; file PDF giữ nguyên
+        </span>
+      </label>
       <div className="muted">
         {exam.date && <>Ngày {exam.date} · </>}
         {exam.duration && <>{exam.duration} phút · </>}

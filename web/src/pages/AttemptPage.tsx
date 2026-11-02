@@ -124,6 +124,11 @@ function Doing({ attempt, onSubmitted }: { attempt: AttemptDetail; onSubmitted: 
         </button>
       </div>
       {error && <div className="alert error">{error}</div>}
+      {(attempt.data.seen_before ?? 0) > 0 && (
+        <div className="muted small">
+          {attempt.data.seen_before}/{keys.length} câu bạn đã từng gặp ở lượt trước (ngân hàng chưa đủ câu mới để thay).
+        </div>
+      )}
 
       <div className="attempt-grid">
         <div className="paper">

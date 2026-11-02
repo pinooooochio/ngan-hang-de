@@ -132,6 +132,11 @@ export default function EditorPage() {
         <button disabled={!one || busy} onClick={previewPdf}>
           Xem PDF
         </button>
+        {code && question && (
+          <Link className="button" to={`/sinh/bien-the/${encodeURIComponent(code)}`} title="Soạn thêm câu cùng dạng, khác số liệu">
+            Sinh biến thể
+          </Link>
+        )}
         {code && admin && (
           <button className="danger" onClick={remove}>
             Xoá
@@ -141,6 +146,31 @@ export default function EditorPage() {
 
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert ok">{message}</div>}
+      {question?.check_note && (
+        <div className="alert error">
+          Cảnh báo lúc sinh: {question.check_note}. Sửa và lưu lại câu thì cảnh báo này tự mất.
+        </div>
+      )}
+      {question?.variant_group && (question.variants?.length ?? 0) > 1 && (
+        <div className="variant-strip">
+          <span className="muted small">Nhóm biến thể ({question.variants!.length} câu):</span>
+          {question.variants!.map((v) =>
+            v.code === code ? (
+              <span key={v.code} className="tag current">
+                {v.code}
+              </span>
+            ) : (
+              <Link key={v.code} to={`/cau/${encodeURIComponent(v.code)}`} className={`tag ${v.status === "draft" ? "is-draft" : ""}`}>
+                {v.code}
+                {v.status === "draft" && " (nháp)"}
+              </Link>
+            ),
+          )}
+          <Link className="small" to={`/?nhom=${encodeURIComponent(question.variant_group)}`}>
+            Xem cả nhóm ở ngân hàng
+          </Link>
+        </div>
+      )}
       {!admin && !code && <p className="hint">Câu mới lưu ở dạng nháp, admin duyệt rồi mới dùng để ghép đề.</p>}
 
       <div className="editor-grid">

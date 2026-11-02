@@ -61,8 +61,10 @@ def test_variants_keep_correct_answers_and_pins(session):
                 assert key == "D"  # lựa chọn ghim giữ nguyên vị trí D
         counts = Counter(v.answer_key["sections"][0])
         assert max(counts.values()) - min(counts.values()) <= 1
-    # Cùng seed thì sinh lại giống hệt
-    data, key = generator.make_variant(spec, generator.select_questions(session, spec), "101")
+    # Cùng seed, cùng các câu đã chọn thì sinh lại mã đề giống hệt (chọn câu lại thì khác vì đề này
+    # đã làm các câu vừa chọn thành "đã dùng")
+    sections = [[it.question for it in exam.items if it.section == si] for si in range(len(spec["section"]))]
+    data, key = generator.make_variant(spec, sections, "101")
     assert key == exam.variants[0].answer_key
 
 

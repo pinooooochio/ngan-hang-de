@@ -26,7 +26,7 @@ from typing import Callable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import bank, figures
+from . import bank, figures, kiemtra
 from .models import (
     BuildStatus,
     GenerationBatch,
@@ -283,6 +283,13 @@ Mỗi câu phải đúng mức độ được yêu cầu: đừng làm câu NB q
 - Trả lời ngắn: đáp số là một số; khi viết ra có tối đa 4 kí tự kể cả dấu "-" và dấu ","
   (ví dụ 12, -3, 2,5, 0,75). Nếu kết quả không gọn thì yêu cầu làm tròn rõ ràng trong đề
   (ví dụ "làm tròn kết quả đến hàng phần mười"), và ghi đáp số đã làm tròn trong \shortans.
+- Tự kiểm đáp án: với câu trắc nghiệm và trả lời ngắn có đáp án là một số hoặc một bộ số (tọa độ),
+  thêm dòng `% @kiemtra: <biểu thức> = <đáp án>` ngay dưới dòng @tags. Biểu thức tính đáp án trực tiếp
+  từ số liệu của đề (thể hiện cách tính, không chép lại đáp án), máy sẽ tính lại để đối chiếu. Cú pháp:
+  số thập phân dùng dấu chấm; phép + - * / ^; hàm sqrt, cbrt, ln, log10, log(a, x) (lôgarit cơ số a của x),
+  exp, sin, cos, tan (theo radian), abs, comb(n, k), perm(n, k), factorial(n); hằng pi, e; bộ số viết
+  (a, b, c). Không dùng dấu chấm phẩy hay chữ cái khác trong dòng này. Đáp án không phải số (biểu thức
+  chứa biến, khoảng, mệnh đề) thì bỏ dòng này. Ví dụ: % @kiemtra: 1*2 + 2*0 + (-1)*1 = 1
 - Lời giải trình bày ngắn gọn các bước chính để học sinh tự đọc hiểu được. Không nhắc tới chữ cái
   của phương án ("chọn A", "đáp án B") vì thứ tự phương án sẽ bị đảo khi ra đề; nêu giá trị đúng thay vào đó.
 - Không chèn ảnh (\includegraphics). Hình vẽ nếu có thì vẽ bằng TikZ theo mục "Hình vẽ" dưới đây.
@@ -348,6 +355,7 @@ def normalize_params(p: dict) -> dict:
         "count": count,
         "notes": (p.get("notes") or "").strip() or None,
         "figure": bool(p.get("figure")),
+        "variant_of": (p.get("variant_of") or "").strip() or None,
     }
 
 
@@ -359,6 +367,8 @@ def _short(text: str, n: int = 220) -> str:
 def build_prompt(session: Session, params: dict, n_examples: int = 2, n_avoid: int = 40) -> tuple[str, str]:
     """Trả về (prompt hệ thống, prompt yêu cầu). Prompt hệ thống không đổi giữa các lần gọi."""
     p = normalize_params(params)
+    if p["variant_of"]:
+        return SYSTEM_PROMPT, variant_prompt(session, p)
     level, qtype = Level(p["level"]), QuestionType(p["type"])
     cur_topic = find_topic(p["grade"], p["topic"])
     names = topic_names(p["grade"], p["topic"])
@@ -425,6 +435,63 @@ def build_prompt(session: Session, params: dict, n_examples: int = 2, n_avoid: i
     return SYSTEM_PROMPT, "\n".join(lines)
 
 
+# ---------- Biến thể: cùng dạng, khác số liệu ----------
+
+
+def variant_params(session: Session, code: str, count: int = 5) -> dict:
+    """Tham số lần sinh biến thể cho câu `code`: lớp, chủ đề, dạng lấy từ thẻ của câu (để lịch sử
+    sinh xếp đúng chỗ), mức độ và loại câu giữ nguyên."""
+    q = bank.get_question(session, code)
+    if q is None:
+        raise GenError(f"không có câu {code}")
+    names = bank.tag_names(q.tags[0]) if q.tags else []
+    if not names:
+        raise GenError(f"câu {code} chưa gắn thẻ lớp/chủ đề")
+    grade, topic, dang = names[0], names[-1], None
+    g = next((g for g in load_curriculum() if g["slug"] == slugify(names[0])), None)
+    for t in g["chu_de"] if g else []:
+        n = len(t["names"])
+        if [slugify(x) for x in names[:n]] == [slugify(x) for x in t["names"]]:
+            topic, dang = t["ten"], names[n] if len(names) > n else None
+            break
+    else:
+        if len(names) > 1:
+            topic = names[1]
+            dang = names[2] if len(names) > 2 else None
+    return normalize_params({
+        "grade": grade, "topic": topic, "dang": dang, "level": (q.level or Level.TH).value, "type": q.type.value,
+        "count": count, "variant_of": q.code, "figure": bool(figures.find_figures(q.stem_latex)),
+    })
+
+
+def variant_prompt(session: Session, p: dict) -> str:
+    from .serialize import question_to_ex
+
+    q = bank.get_question(session, p["variant_of"])
+    if q is None:
+        raise GenError(f"không có câu {p['variant_of']}")
+    tags = " ; ".join(" / ".join(bank.tag_names(t)) for t in q.tags)
+    lines = [
+        f"Hãy soạn {p['count']} biến thể của câu gốc dưới đây.",
+        "- Giữ nguyên loại câu, mức độ, cách hỏi, số bước giải và kiểu phương án nhiễu (nhiễu vẫn lấy từ "
+        "cùng các lỗi sai như câu gốc); chỉ thay số liệu, và nếu cần thì tên điểm, tên hàm.",
+        "- Chọn số liệu để kết quả vẫn gọn; đáp án của mỗi biến thể phải khác đáp án câu gốc và khác nhau.",
+        "- Lời giải viết lại đầy đủ theo số liệu mới, tự giải lại từ đầu chứ không sửa số trong lời giải cũ.",
+        "- Câu gốc có hình thì vẽ lại hình đúng theo số liệu mới.",
+        f"- Dòng thẻ của mỗi biến thể: % @tags: {tags} ; @level: {p['level']}",
+        "",
+        "Câu gốc:",
+        "",
+        question_to_ex(q).strip(),
+    ]
+    others = [o for o in bank.variant_members(session, q) if o.id != q.id]
+    if others:
+        lines += ["", "Nhóm đã có các biến thể sau, biến thể mới phải dùng số liệu khác:"]
+        lines += [f"- {_short(o.stem_latex)}" for o in others[:40]]
+    lines += ["", f"Trả về đúng {p['count']} khối câu hỏi theo định dạng đã nêu, không kèm lời dẫn."]
+    return "\n".join(lines)
+
+
 def combined_prompt(system: str, user: str) -> str:
     """Một prompt duy nhất để dán vào ô chat Claude (không có chỗ nhập prompt hệ thống)."""
     return f"{system}\n# Yêu cầu\n\n{user}\n"
@@ -459,7 +526,10 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
     p = normalize_params(params)
     level, qtype = Level(p["level"]), QuestionType(p["type"])
     base = topic_names(p["grade"], p["topic"])
-    parsed = parse_text(strip_fences(text))
+    text = strip_fences(text)
+    parsed = parse_text(text)
+    lines = [kiemtra.find_line(chunk) for chunk in split_blocks(text)]
+    original = bank.get_question(session, p["variant_of"]) if p.get("variant_of") else None
     for pq in parsed:
         pq.code = None  # mã và nguồn do hệ thống đặt
         pq.source = None
@@ -471,7 +541,8 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
                 if len(t) > len(base) and [slugify(x) for x in t[: len(base)]] == [slugify(x) for x in base]:
                     dang = t[len(base)]
                     break
-        pq.tags = [base + ([dang] if dang else [])]
+        # biến thể giữ nguyên mọi thẻ của câu gốc
+        pq.tags = [bank.tag_names(t) for t in original.tags] if original else [base + ([dang] if dang else [])]
         pq.warnings = [w for w in pq.warnings if "thẻ" not in w and "mức độ" not in w]
         if pq.type != qtype:
             pq.errors.append(f"loại câu là {pq.type.value}, yêu cầu {qtype.value}")
@@ -490,6 +561,7 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
     with ThreadPoolExecutor(2) as pool:
         fig_errors = dict(zip(map(id, parsed), pool.map(lambda pq: figures.check_text(question_text(pq)), parsed)))
 
+    answer_errors = {id(pq): kiemtra.check_question(pq, line) for pq, line in zip(parsed, lines)}
     out = []
     for item in bank.preview_import(session, parsed):
         pq = item.parsed
@@ -503,6 +575,8 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
             "errors": pq.errors,
             "warnings": pq.warnings,
             "figure_errors": fig_errors.get(id(pq), []),
+            "answer_errors": answer_errors.get(id(pq), []),
+            "answer_checked": item.index < len(lines) and lines[item.index] is not None,
             "duplicate_of": item.duplicate_of,
             "code": None,
             "parsed": pq,
@@ -513,6 +587,8 @@ def check_output(session: Session, params: dict, text: str) -> list[dict]:
 def import_batch(session: Session, batch: GenerationBatch, text: str) -> None:
     """Kiểm tra kết quả `text` của lần sinh và lưu câu hợp lệ vào ngân hàng ở trạng thái nháp."""
     items = check_output(session, batch.params, text)
+    variant_of = batch.params.get("variant_of")
+    original = bank.get_question(session, variant_of) if variant_of else None
     batch.output = text
     for it in items:
         pq: ParsedQuestion = it.pop("parsed")
@@ -520,6 +596,10 @@ def import_batch(session: Session, batch: GenerationBatch, text: str) -> None:
             continue
         q = Question(code=bank.next_code(session), status=Status.DRAFT, source=batch.source)
         bank._apply(session, q, pq)
+        q.check_note = "; ".join(it["figure_errors"] + it["answer_errors"]) or None
+        if original is not None:
+            original.variant_group = original.variant_group or original.code
+            q.variant_group = original.variant_group
         session.add(q)
         session.flush()
         it["code"] = q.code

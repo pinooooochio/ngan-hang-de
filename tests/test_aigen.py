@@ -285,3 +285,94 @@ def test_multi_rows_api_mode_queues_one_batch_per_row(app, monkeypatch):
     g = c.post("/api/gen/batches/multi", json={"rows": ROWS, "mode": "api"}).json()
     assert [b["status"] for b in g["batches"]] == ["pending"] * 3
     assert len({b["group_id"] for b in g["batches"]}) == 1
+
+
+VARIANTS = r"""% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: NB
+% @kiemtra: 2*1 + 1*0 + (-1)*3 = -1
+\begin{ex}
+  Trong không gian $Oxyz$, cho $\vec u=(2;1;-1)$ và $\vec v=(1;0;3)$. Tích vô hướng $\vec u\cdot\vec v$ bằng
+  \choice{$1$}{\True $-1$}{$5$}{$-5$}
+  \loigiai{$2-3=-1$.}
+\end{ex}
+
+% @kiemtra: 3*1 + 1*2 + 0*1 = 5
+\begin{ex}
+  Trong không gian $Oxyz$, cho $\vec u=(3;1;0)$ và $\vec v=(1;2;1)$. Tích vô hướng $\vec u\cdot\vec v$ bằng
+  \choice{$4$}{\True $6$}{$5$}{$7$}
+  \loigiai{Ghi sai đáp án.}
+\end{ex}
+"""
+
+
+def test_variants_grouped_and_answer_checked(app):
+    c = app.state.client
+    p = c.get("/api/questions/12V-001/variant-params", params={"count": 2}).json()
+    assert p["variant_of"] == "12V-001" and p["grade"] == "Lớp 12" and p["topic"] == "Vectơ trong không gian"
+    assert p["dang"] == "Tích vô hướng" and p["count"] == 2
+    prompt = c.post("/api/gen/prompt", json=p).json()
+    assert "biến thể của câu gốc" in prompt["user"] and "12V-001" in prompt["user"]
+    assert "@kiemtra" in prompt["system"]
+
+    b = c.post("/api/gen/batches", json={"params": p, "mode": "manual", "output": VARIANTS}).json()
+    assert b["n_added"] == 2
+    good, bad = b["items"]
+    assert good["answer_errors"] == [] and good["answer_checked"]
+    assert any("khác đáp số" in e for e in bad["answer_errors"])
+    # câu gốc và hai biến thể cùng một nhóm; cảnh báo lưu lên câu để người duyệt thấy ở ngân hàng
+    q = c.get(f"/api/questions/{bad['code']}").json()
+    assert q["variant_group"] == "12V-001" and q["n_variants"] == 3 and "khác đáp số" in q["check_note"]
+    assert q["tags"][0]["names"] == ["Lớp 12", "Vectơ trong không gian", "Tích vô hướng"]
+    listed = c.get("/api/questions", params={"group": "12V-001"}).json()
+    assert listed["total"] == 3 and all(it["n_variants"] == 3 for it in listed["items"])
+    # sửa câu thì cảnh báo được xoá
+    src = q["ex_source"].replace("Ghi sai đáp án.", "$3+2+0=5$.").replace("{\\True $6$}", "{$6$}").replace("{$5$}", "{\\True $5$}")
+    # duyệt cả nhóm bỏ qua câu còn cảnh báo
+    assert c.post("/api/questions/group/12V-001/approve").json() == {"approved": 1, "skipped": [bad["code"]]}
+    q2 = c.put(f"/api/questions/{bad['code']}", json={"source": src}).json()
+    assert q2["check_note"] is None
+    assert c.post("/api/questions/group/12V-001/approve").json() == {"approved": 1, "skipped": []}
+
+
+def make_group(c) -> list[str]:
+    """Nhóm biến thể đã duyệt: 12V-001 và hai biến thể."""
+    p = c.get("/api/questions/12V-001/variant-params", params={"count": 2}).json()
+    fixed = VARIANTS.replace("{\\True $6$}{$5$}", "{$6$}{\\True $5$}").replace("Ghi sai đáp án.", "$3+2=5$.")
+    b = c.post("/api/gen/batches", json={"params": p, "mode": "manual", "output": fixed}).json()
+    codes = [it["code"] for it in b["items"]]
+    c.post("/api/questions/bulk", json={"codes": ["12V-001", *codes], "status": "approved"})
+    return ["12V-001", *codes]
+
+
+def test_varying_exam_gives_unseen_variants(app):
+    c = app.state.client
+    group = make_group(c)
+    exam = {"title": "Đề đổi biến thể", "variants": 1, "sections": [{"type": "mcq", "ids": ["12V-001", "12V-002"]}]}
+    e = c.post("/api/exams", json=exam).json()
+    assert e["vary"] is True
+    seen = []
+    for _ in range(3):
+        a = c.post("/api/attempts", json={"exam_id": e["id"]}).json()
+        codes = [q["code"] for q in a["data"]["sections"][0]["questions"]]
+        assert "12V-002" in codes  # câu không có nhóm thì giữ nguyên
+        seen.append(next(x for x in codes if x in group))
+    assert sorted(seen) == sorted(group)  # ba lượt gặp đủ ba biến thể, không lặp
+    assert a["data"]["seen_before"] == 1  # lượt thứ ba: chỉ 12V-002 là câu đã gặp
+    # tắt công tắc thì mọi lượt làm đúng câu trong đề
+    assert c.put(f"/api/exams/{e['id']}/vary", json={"vary": False}).json()["vary"] is False
+    a = c.post("/api/attempts", json={"exam_id": e["id"]}).json()
+    assert "12V-001" in [q["code"] for q in a["data"]["sections"][0]["questions"]]
+
+
+def test_exam_takes_one_question_per_group_and_reports_unused(app):
+    c = app.state.client
+    group = make_group(c)
+    sec = {"type": "mcq", "pick": [{"tag": "lop-12/vecto-trong-khong-gian/tich-vo-huong", "level": "NB", "count": 2}]}
+    avail = c.post("/api/exams/availability", json={"sections": [sec]}).json()["sections"][0]
+    n = avail["rows"][0]
+    assert avail["unused"][0] == n
+    for seed in range(5):
+        e = c.post("/api/exams", json={"title": "Đề", "seed": seed, "sections": [sec]}).json()
+        codes = [q["code"] for q in e["variants"][0]["data"]["sections"][0]["questions"]]
+        if n - len(group) + 1 >= 2:  # đủ câu ngoài nhóm thì không lấy hai câu cùng nhóm
+            assert len(set(codes) & set(group)) <= 1
+    assert c.post("/api/exams/availability", json={"sections": [sec]}).json()["sections"][0]["unused"][0] < n

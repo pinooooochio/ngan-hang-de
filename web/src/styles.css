@@ -1501,3 +1501,37 @@ label.button:hover {
 .gen-rows th:nth-child(2) {
   width: 24%;
 }
+
+/* ---------- Nhóm biến thể ---------- */
+button.badge.variant {
+  border: 0;
+  cursor: pointer;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+}
+button.badge.variant:hover {
+  text-decoration: underline;
+}
+.card-foot {
+  margin-top: 6px;
+  text-align: right;
+}
+.variant-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.variant-strip .tag.current {
+  background: var(--accent);
+  color: #fff;
+}
+.variant-strip .tag.is-draft {
+  color: var(--warn);
+}
+.variant-source {
+  margin-bottom: 12px;
+}
