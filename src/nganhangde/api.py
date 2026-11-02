@@ -357,6 +357,7 @@ class GenParamsIn(BaseModel):
     notes: str | None = None
     figure: bool = False
     variant_of: str | None = None  # mã câu gốc khi sinh biến thể
+    param: bool = False  # soạn mẫu câu tham số
 
 
 class GenCheckIn(BaseModel):
@@ -394,6 +395,7 @@ class VariantRunIn(BaseModel):
     mode: str = Field("api", pattern="^(api|manual)$")
     output: str | None = None
     group_id: str | None = None
+    param: bool = False  # chuyển các câu gốc thành câu tham số (mỗi câu một mẫu)
 
 
 class GenBatchIn(BaseModel):
@@ -1508,7 +1510,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
 
     def variant_rows(body: VariantRunIn, session: Session) -> list[dict]:
         try:
-            packs = aigen.variant_packs(session, body.codes, body.per)
+            packs = aigen.variant_packs(session, body.codes, body.per, body.param)
         except aigen.GenError as e:
             raise HTTPException(422, str(e))
         notes = (body.notes or "").strip() or None
@@ -1544,7 +1546,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         try:
             batches = aigen.create_variant_group(session, body.codes, body.per, body.mode, body.output,
                                                  user_id=user.id, username=user.username, group_id=body.group_id,
-                                                 notes=notes)
+                                                 notes=notes, param=body.param)
         except aigen.GenError as e:
             session.rollback()
             raise HTTPException(422, str(e))

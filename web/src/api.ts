@@ -325,6 +325,8 @@ export interface GenParams {
   figure?: boolean;
   /** Mã câu gốc khi sinh biến thể. */
   variant_of?: string;
+  /** Soạn mẫu câu tham số (hoặc chuyển các câu gốc thành câu tham số). */
+  param?: boolean;
   /** Sinh biến thể hàng loạt: các câu gốc của lần sinh, mỗi câu `per` biến thể. */
   variants_of?: string[] | null;
   per?: number | null;
@@ -342,6 +344,8 @@ export interface VariantRun {
   codes: string[];
   per: number;
   notes?: string;
+  /** Chuyển các câu gốc thành câu tham số (mỗi câu một mẫu). */
+  param?: boolean;
 }
 
 export interface GenItem {
@@ -361,6 +365,10 @@ export interface GenItem {
   answer_checked?: boolean;
   /** Câu gốc của biến thể. */
   variant_of?: string | null;
+  /** Câu tham số. */
+  param?: boolean;
+  /** Câu tham số: đề bài với một bộ số mẫu. */
+  sample_stem?: string | null;
   duplicate_of: string | null;
   code: string | null;
 }

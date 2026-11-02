@@ -35,6 +35,8 @@ export default function TopicPicker({ grades, grade: initialGrade, maxCount, def
   const [type, setType] = useState<QType>("mcq");
   const [count, setCount] = useState(defaultCount);
   const [figure, setFigure] = useState(false);
+  const [param, setParam] = useState(false);
+  const canParam = type === "mcq" || type === "short";
 
   const g = grades.find((x) => x.ten === grade);
   const q = fold(search.trim());
@@ -84,7 +86,14 @@ export default function TopicPicker({ grades, grade: initialGrade, maxCount, def
     const rows: Omit<GenParams, "notes">[] = [];
     for (const k of picked)
       for (const l of LEVELS)
-        if (levels.has(l.value)) rows.push({ ...unkey(k), level: l.value, type, count, figure: figure || undefined });
+        if (levels.has(l.value)) rows.push({
+            ...unkey(k),
+            level: l.value,
+            type,
+            count,
+            figure: (figure && !param) || undefined,
+            param: (param && canParam) || undefined,
+          });
     onAdd(rows);
   };
 
@@ -230,7 +239,17 @@ export default function TopicPicker({ grades, grade: initialGrade, maxCount, def
           />
         </label>
         <label className="inline">
-          <input type="checkbox" checked={figure} onChange={(e) => setFigure(e.target.checked)} /> Có hình vẽ
+          <input type="checkbox" checked={figure && !param} disabled={param} onChange={(e) => setFigure(e.target.checked)} /> Có
+          hình vẽ
+        </label>
+        <label className="inline" title="Chỉ trắc nghiệm và trả lời ngắn">
+          <input
+            type="checkbox"
+            checked={param && canParam}
+            disabled={!canParam}
+            onChange={(e) => setParam(e.target.checked)}
+          />{" "}
+          Câu tham số
         </label>
         <span className="spacer" />
         <span className="muted small">

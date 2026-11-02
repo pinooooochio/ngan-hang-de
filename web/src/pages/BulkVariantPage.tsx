@@ -43,15 +43,24 @@ export default function BulkVariantPage() {
   const [exams, setExams] = useState<ExamSummary[]>([]);
   const [cur, setCur] = useState<Curriculum | null>(null);
   const [tag, setTag] = useState("");
-  const [levels, setLevels] = useState<Set<Level>>(new Set(LEVELS.map((l) => l.value)));
-  const [types, setTypes] = useState<Set<QType>>(new Set(TYPES.map((t) => t.value)));
+  const [levels, setLevels] = useState<Set<Level>>(
+    new Set(LEVELS.map((l) => l.value)),
+  );
+  const [types, setTypes] = useState<Set<QType>>(
+    new Set(TYPES.map((t) => t.value)),
+  );
   const [examId, setExamId] = useState<number | "">("");
+  // Chế độ: sinh biến thể bằng Claude, hoặc chuyển câu gốc thành câu tham số (mỗi câu một mẫu)
+  const [conv, setConv] = useState(params.get("thamso") === "1");
   const [computational, setComputational] = useState(false);
-  const [per, setPer] = useState(5);
+  const [perInput, setPer] = useState(5);
+  const per = conv ? 1 : perInput;
   const [notes, setNotes] = useState("");
   const [plan, setPlan] = useState<VariantPlan | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [parts, setParts] = useState<{ codes: string[]; count: number; combined: string }[] | null>(null);
+  const [parts, setParts] = useState<
+    { codes: string[]; count: number; combined: string }[] | null
+  >(null);
   const [partIdx, setPartIdx] = useState(0);
   const [output, setOutput] = useState("");
   const [checked, setChecked] = useState<GenItem[] | null>(null);
@@ -75,7 +84,7 @@ export default function BulkVariantPage() {
     setSaved([]);
     setGroupId(null);
   };
-  useEffect(reset, [scope, tag, levels, types, examId, computational]);
+  useEffect(reset, [scope, tag, levels, types, examId, computational, conv]);
   useEffect(() => {
     setParts(null);
     setChecked(null);
@@ -95,7 +104,13 @@ export default function BulkVariantPage() {
 
   const findSources = () =>
     run(async () => {
-      const filter = { levels: [...levels], types: [...types], computational_only: computational };
+      const filter = {
+        levels: [...levels],
+        types: conv
+          ? [...types].filter((t) => t === "mcq" || t === "short")
+          : [...types],
+        computational_only: computational || conv,
+      };
       const body =
         scope === "topic"
           ? { ...filter, tag }
@@ -109,10 +124,22 @@ export default function BulkVariantPage() {
       setGroupId(null);
     });
 
-  const codes = useMemo(() => plan?.sources.filter((q) => chosen.has(q.code)).map((q) => q.code) ?? [], [plan, chosen]);
-  const body = { codes, per, notes: notes.trim() || undefined };
+  const codes = useMemo(
+    () =>
+      plan?.sources.filter((q) => chosen.has(q.code)).map((q) => q.code) ?? [],
+    [plan, chosen],
+  );
+  const body = {
+    codes,
+    per,
+    notes: notes.trim() || undefined,
+    param: conv || undefined,
+  };
   const maxPer = plan?.max_per ?? 10;
-  const pack = Math.max(1, Math.min(plan?.pack ?? 4, Math.floor((cur?.max_count ?? 30) / per)));
+  const pack = Math.max(
+    1,
+    Math.min(plan?.pack ?? 4, Math.floor((cur?.max_count ?? 30) / per)),
+  );
   const calls = Math.ceil(codes.length / pack);
 
   const generate = () =>
@@ -133,12 +160,21 @@ export default function BulkVariantPage() {
     });
 
   const part = parts?.[partIdx];
-  const partBody = part ? { codes: part.codes, per, notes: body.notes } : null;
-  const check = () => partBody && run(async () => setChecked(await api.variantCheck(partBody, output)));
+  const partBody = part
+    ? { codes: part.codes, per, notes: body.notes, param: body.param }
+    : null;
+  const check = () =>
+    partBody &&
+    run(async () => setChecked(await api.variantCheck(partBody, output)));
   const savePart = () =>
     partBody &&
     run(async () => {
-      const g = await api.variantBatches(partBody, "manual", output, groupId ?? undefined);
+      const g = await api.variantBatches(
+        partBody,
+        "manual",
+        output,
+        groupId ?? undefined,
+      );
       setGroupId(g.group_id);
       setSaved([...saved, ...g.batches]);
       setOutput("");
@@ -151,13 +187,17 @@ export default function BulkVariantPage() {
       await navigator.clipboard.writeText(part?.combined ?? "");
       setCopied(true);
     } catch {
-      setError("Trình duyệt không cho chép tự động, hãy bôi đen ô prompt rồi chép.");
+      setError(
+        "Trình duyệt không cho chép tự động, hãy bôi đen ô prompt rồi chép.",
+      );
     }
   };
 
   const nNew = checked?.filter((x) => x.state === "new").length ?? 0;
   const savedAdded = saved.reduce((s, b) => s + b.n_added, 0);
-  const pending = saved.some((b) => b.status === "pending" || b.status === "running");
+  const pending = saved.some(
+    (b) => b.status === "pending" || b.status === "running",
+  );
   const toggleSet = <T,>(set: Set<T>, v: T, on: boolean) => {
     const n = new Set(set);
     if (on) n.add(v);
@@ -165,40 +205,110 @@ export default function BulkVariantPage() {
     return n;
   };
   const canFind =
-    !busy && (scope === "topic" ? !!tag : scope === "exam" ? examId !== "" : picked.length > 0) && levels.size > 0 && types.size > 0;
+    !busy &&
+    (scope === "topic"
+      ? !!tag
+      : scope === "exam"
+        ? examId !== ""
+        : picked.length > 0) &&
+    levels.size > 0 &&
+    types.size > 0;
 
   return (
     <div className="generate">
       <div className="editor-head">
         <Link to="/sinh">‹ Sinh câu hỏi</Link>
-        <h2>Sinh biến thể hàng loạt</h2>
+        <h2>{conv ? "Chuyển thành câu tham số" : "Sinh biến thể hàng loạt"}</h2>
+        <span className="spacer" />
+        <div className="segmented">
+          <button
+            className={conv ? "" : "active"}
+            onClick={() => setConv(false)}
+          >
+            Sinh biến thể
+          </button>
+          <button
+            className={conv ? "active" : ""}
+            onClick={() => setConv(true)}
+          >
+            Chuyển thành câu tham số
+          </button>
+        </div>
       </div>
-      <p className="hint">
-        Chọn các câu gốc, mỗi câu gốc được sinh đúng {per} biến thể (cùng dạng, cùng mức độ, chỉ đổi số liệu) và vào cùng
-        nhóm biến thể với câu gốc. Chỉ câu đã duyệt mới làm câu gốc; mỗi nhóm lấy một câu đại diện. Biến thể vào ngân hàng ở
-        dạng nháp, được tự kiểm đáp án và không được trùng số liệu với câu khác trong nhóm.
-      </p>
+      {conv ? (
+        <p className="hint">
+          Claude viết lại mỗi câu gốc thành một mẫu câu tham số: số liệu thành
+          tham số, đáp án và phương án nhiễu thành công thức. Máy bốc thử mẫu,
+          mẫu đạt thì vào ngân hàng ở dạng nháp, cùng nhóm biến thể với câu gốc
+          (mỗi đề vẫn chỉ lấy một câu của nhóm). Chỉ câu trắc nghiệm và trả lời
+          ngắn đã duyệt mới chuyển được; câu không tham số hoá hợp lý thì Claude
+          bỏ qua. Duyệt mẫu ở trang soạn câu, nơi có 3 bản mẫu và nút "Bộ số
+          khác".
+        </p>
+      ) : (
+        <p className="hint">
+          Chọn các câu gốc, mỗi câu gốc được sinh đúng {per} biến thể (cùng
+          dạng, cùng mức độ, chỉ đổi số liệu) và vào cùng nhóm biến thể với câu
+          gốc. Chỉ câu đã duyệt mới làm câu gốc; mỗi nhóm lấy một câu đại diện.
+          Biến thể vào ngân hàng ở dạng nháp, được tự kiểm đáp án và không được
+          trùng số liệu với câu khác trong nhóm.
+        </p>
+      )}
 
       <section className="section-card">
         <div className="toolbar">
           <b>Chọn câu gốc</b>
           <label className="inline">
-            <input type="radio" checked={scope === "topic"} onChange={() => setScope("topic")} /> Theo chủ đề
+            <input
+              type="radio"
+              checked={scope === "topic"}
+              onChange={() => setScope("topic")}
+            />{" "}
+            Theo chủ đề
           </label>
           <label className="inline">
-            <input type="radio" checked={scope === "exam"} onChange={() => setScope("exam")} /> Theo đề đã ghép
+            <input
+              type="radio"
+              checked={scope === "exam"}
+              onChange={() => setScope("exam")}
+            />{" "}
+            Theo đề đã ghép
           </label>
-          <label className="inline" title={picked.length ? "" : "Tick câu ở ngân hàng rồi bấm Sinh biến thể trên thanh chọn"}>
-            <input type="radio" disabled={!picked.length} checked={scope === "picked"} onChange={() => setScope("picked")} /> Câu
-            đang chọn ở ngân hàng ({picked.length})
+          <label
+            className="inline"
+            title={
+              picked.length
+                ? ""
+                : "Tick câu ở ngân hàng rồi bấm Sinh biến thể trên thanh chọn"
+            }
+          >
+            <input
+              type="radio"
+              disabled={!picked.length}
+              checked={scope === "picked"}
+              onChange={() => setScope("picked")}
+            />{" "}
+            Câu đang chọn ở ngân hàng ({picked.length})
           </label>
         </div>
         <div className="toolbar">
           {scope === "topic" && (
-            <TagSelect tags={tags} value={tag} onChange={setTag} placeholder="Chọn chủ đề hoặc dạng" allowEmpty={false} showCount />
+            <TagSelect
+              tags={tags}
+              value={tag}
+              onChange={setTag}
+              placeholder="Chọn chủ đề hoặc dạng"
+              allowEmpty={false}
+              showCount
+            />
           )}
           {scope === "exam" && (
-            <select value={examId} onChange={(e) => setExamId(e.target.value ? Number(e.target.value) : "")}>
+            <select
+              value={examId}
+              onChange={(e) =>
+                setExamId(e.target.value ? Number(e.target.value) : "")
+              }
+            >
               <option value="">Chọn đề…</option>
               {exams.map((x) => (
                 <option key={x.id} value={x.id}>
@@ -207,7 +317,11 @@ export default function BulkVariantPage() {
               ))}
             </select>
           )}
-          {scope === "picked" && <span className="muted">{picked.length} câu đã chọn ở ngân hàng</span>}
+          {scope === "picked" && (
+            <span className="muted">
+              {picked.length} câu đã chọn ở ngân hàng
+            </span>
+          )}
         </div>
         <div className="toolbar picker-defaults">
           <span>Mức độ:</span>
@@ -215,29 +329,59 @@ export default function BulkVariantPage() {
             <input
               type="checkbox"
               checked={levels.size === LEVELS.length}
-              onChange={(e) => setLevels(new Set(e.target.checked ? LEVELS.map((l) => l.value) : []))}
+              onChange={(e) =>
+                setLevels(
+                  new Set(e.target.checked ? LEVELS.map((l) => l.value) : []),
+                )
+              }
             />{" "}
             Tất cả
           </label>
           {LEVELS.map((l) => (
             <label key={l.value} className="inline">
-              <input type="checkbox" checked={levels.has(l.value)} onChange={(e) => setLevels(toggleSet(levels, l.value, e.target.checked))} />{" "}
+              <input
+                type="checkbox"
+                checked={levels.has(l.value)}
+                onChange={(e) =>
+                  setLevels(toggleSet(levels, l.value, e.target.checked))
+                }
+              />{" "}
               {l.label}
             </label>
           ))}
         </div>
         <div className="toolbar picker-defaults">
           <span>Loại câu:</span>
-          {TYPES.map((t) => (
+          {TYPES.filter((t) => !conv || t.value === "mcq" || t.value === "short").map((t) => (
             <label key={t.value} className="inline">
-              <input type="checkbox" checked={types.has(t.value)} onChange={(e) => setTypes(toggleSet(types, t.value, e.target.checked))} />{" "}
+              <input
+                type="checkbox"
+                checked={types.has(t.value)}
+                onChange={(e) =>
+                  setTypes(toggleSet(types, t.value, e.target.checked))
+                }
+              />{" "}
               {t.label}
             </label>
           ))}
-          <label className="inline" title="Bỏ qua câu tự luận và câu đúng/sai">
-            <input type="checkbox" checked={computational} onChange={(e) => setComputational(e.target.checked)} /> Chỉ câu tính
-            toán
-          </label>
+          {!conv && (
+            <label
+              className="inline"
+              title="Bỏ qua câu tự luận và câu đúng/sai"
+            >
+              <input
+                type="checkbox"
+                checked={computational}
+                onChange={(e) => setComputational(e.target.checked)}
+              />{" "}
+              Chỉ câu tính toán
+            </label>
+          )}
+          {conv && (
+            <span className="muted small">
+              chỉ lấy câu trắc nghiệm và trả lời ngắn
+            </span>
+          )}
         </div>
         <div className="toolbar">
           <button className="primary" disabled={!canFind} onClick={findSources}>
@@ -253,17 +397,30 @@ export default function BulkVariantPage() {
           <div className="toolbar">
             <b>
               {plan.sources.length} câu gốc
-              {plan.sources.length >= plan.max_sources && ` (tối đa ${plan.max_sources} mỗi đợt)`}
+              {plan.sources.length >= plan.max_sources &&
+                ` (tối đa ${plan.max_sources} mỗi đợt)`}
             </b>
             <label className="inline">
               <input
                 type="checkbox"
-                checked={plan.sources.length > 0 && chosen.size === plan.sources.length}
-                onChange={(e) => setChosen(new Set(e.target.checked ? plan.sources.map((q) => q.code) : []))}
+                checked={
+                  plan.sources.length > 0 && chosen.size === plan.sources.length
+                }
+                onChange={(e) =>
+                  setChosen(
+                    new Set(
+                      e.target.checked ? plan.sources.map((q) => q.code) : [],
+                    ),
+                  )
+                }
               />{" "}
               Chọn tất cả
             </label>
-            {plan.skipped.length > 0 && <span className="muted small">bỏ qua {plan.skipped.length} câu (xem dưới bảng)</span>}
+            {plan.skipped.length > 0 && (
+              <span className="muted small">
+                bỏ qua {plan.skipped.length} câu (xem dưới bảng)
+              </span>
+            )}
           </div>
           {plan.sources.length > 0 && (
             <div className="table-wrap">
@@ -281,10 +438,21 @@ export default function BulkVariantPage() {
                   {plan.sources.map((q) => (
                     <tr key={q.code}>
                       <td>
-                        <input type="checkbox" checked={chosen.has(q.code)} onChange={(e) => setChosen(toggleSet(chosen, q.code, e.target.checked))} />
+                        <input
+                          type="checkbox"
+                          checked={chosen.has(q.code)}
+                          onChange={(e) =>
+                            setChosen(
+                              toggleSet(chosen, q.code, e.target.checked),
+                            )
+                          }
+                        />
                       </td>
                       <td>
-                        <Link to={`/cau/${encodeURIComponent(q.code)}`} className="code">
+                        <Link
+                          to={`/cau/${encodeURIComponent(q.code)}`}
+                          className="code"
+                        >
                           {q.code}
                         </Link>
                       </td>
@@ -293,8 +461,11 @@ export default function BulkVariantPage() {
                       </td>
                       <td className="small">
                         {q.variant_group ? (
-                          <Link to={`/?nhom=${encodeURIComponent(q.variant_group)}`}>
-                            {q.n_variants} câu{q.variant_label && <> · {q.variant_label}</>}
+                          <Link
+                            to={`/?nhom=${encodeURIComponent(q.variant_group)}`}
+                          >
+                            {q.n_variants} câu
+                            {q.variant_label && <> · {q.variant_label}</>}
                           </Link>
                         ) : (
                           <span className="muted">chưa có</span>
@@ -311,11 +482,16 @@ export default function BulkVariantPage() {
           )}
           {plan.skipped.length > 0 && (
             <details>
-              <summary className="small">Câu bị bỏ qua ({plan.skipped.length})</summary>
+              <summary className="small">
+                Câu bị bỏ qua ({plan.skipped.length})
+              </summary>
               <ul className="small">
                 {plan.skipped.map((s) => (
                   <li key={s.code}>
-                    <Link to={`/cau/${encodeURIComponent(s.code)}`}>{s.code}</Link>: {s.reason}
+                    <Link to={`/cau/${encodeURIComponent(s.code)}`}>
+                      {s.code}
+                    </Link>
+                    : {s.reason}
                   </li>
                 ))}
               </ul>
@@ -323,35 +499,64 @@ export default function BulkVariantPage() {
           )}
 
           <div className="toolbar">
-            <label className="inline">
-              Số biến thể mỗi câu gốc
-              <input
-                type="number"
-                className="num"
-                min={1}
-                max={maxPer}
-                value={per}
-                onChange={(e) => setPer(Math.max(1, Math.min(maxPer, Number(e.target.value) || 1)))}
-              />
-            </label>
-            <span className="muted small">
-              {codes.length} câu gốc × {per} = <b>{codes.length * per} biến thể</b>, khoảng {calls} lần gọi Claude (mỗi lần{" "}
-              {pack} câu gốc)
-            </span>
+            {conv ? (
+              <span className="muted small">
+                {codes.length} câu gốc → <b>{codes.length} mẫu câu tham số</b>,
+                khoảng {calls} lần gọi Claude (mỗi lần {pack} câu gốc)
+              </span>
+            ) : (
+              <>
+                <label className="inline">
+                  Số biến thể mỗi câu gốc
+                  <input
+                    type="number"
+                    className="num"
+                    min={1}
+                    max={maxPer}
+                    value={per}
+                    onChange={(e) =>
+                      setPer(
+                        Math.max(
+                          1,
+                          Math.min(maxPer, Number(e.target.value) || 1),
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <span className="muted small">
+                  {codes.length} câu gốc × {per} ={" "}
+                  <b>{codes.length * per} biến thể</b>, khoảng {calls} lần gọi
+                  Claude (mỗi lần {pack} câu gốc)
+                </span>
+              </>
+            )}
           </div>
           <label className="gen-notes">
             Yêu cầu thêm (tuỳ chọn)
-            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ví dụ: số liệu nguyên, không quá 20" />
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ví dụ: số liệu nguyên, không quá 20"
+            />
           </label>
           <div className="toolbar">
-            <button className="primary" disabled={busy || !codes.length || !cur?.api} onClick={generate}>
+            <button
+              className="primary"
+              disabled={busy || !codes.length || !cur?.api}
+              onClick={generate}
+            >
               Sinh bằng Claude ({calls} lần gọi)
             </button>
             <button disabled={busy || !codes.length} onClick={getPrompts}>
               Lấy prompt để tự dán vào Claude
             </button>
             {cur && !cur.api && (
-              <span className="muted small">Máy chủ chưa có ANTHROPIC_API_KEY nên chưa sinh trực tiếp được; dùng cách lấy prompt.</span>
+              <span className="muted small">
+                Máy chủ chưa có ANTHROPIC_API_KEY nên chưa sinh trực tiếp được;
+                dùng cách lấy prompt.
+              </span>
             )}
           </div>
         </section>
@@ -361,13 +566,18 @@ export default function BulkVariantPage() {
         <div className="alert ok">
           {pending ? (
             <>
-              Đã xếp {saved.length} lần sinh vào hàng đợi, Claude soạn lần lượt. Xem tiến độ ở{" "}
-              <Link to="/sinh">Các lần sinh</Link>.
+              Đã xếp {saved.length} lần sinh vào hàng đợi, Claude soạn lần lượt.
+              Xem tiến độ ở <Link to="/sinh">Các lần sinh</Link>.
             </>
           ) : (
             <>
-              Đã lưu {saved.length} phần, {savedAdded} biến thể mới.{" "}
-              {savedAdded > 0 && <Link to={bankLink(saved.map((b) => b.source).join("|"))}>Duyệt các biến thể</Link>}
+              Đã lưu {saved.length} phần, {savedAdded}{" "}
+              {conv ? "câu tham số" : "biến thể"} mới.{" "}
+              {savedAdded > 0 && (
+                <Link to={bankLink(saved.map((b) => b.source).join("|"))}>
+                  Duyệt các {conv ? "câu tham số" : "biến thể"}
+                </Link>
+              )}
             </>
           )}
         </div>
@@ -383,16 +593,27 @@ export default function BulkVariantPage() {
                 <b>
                   Phần {partIdx + 1}/{parts.length}
                 </b>{" "}
-                ({part!.codes.join(", ")}, {part!.count} biến thể). Lưu xong phần này thì sang phần sau; các phần chung một đợt.
+                ({part!.codes.join(", ")}, {part!.count}{" "}
+                {conv ? "mẫu câu tham số" : "biến thể"}). Lưu xong phần này thì
+                sang phần sau; các phần chung một đợt.
               </div>
               <div className="manual-step">
-                <b>1.</b> Chép prompt này, dán vào một cuộc trò chuyện mới với Claude.{" "}
-                <button onClick={copy}>{copied ? "Đã chép" : "Chép prompt"}</button>
+                <b>1.</b> Chép prompt này, dán vào một cuộc trò chuyện mới với
+                Claude.{" "}
+                <button onClick={copy}>
+                  {copied ? "Đã chép" : "Chép prompt"}
+                </button>
               </div>
-              <textarea className="mono" rows={8} readOnly value={part!.combined} />
+              <textarea
+                className="mono"
+                rows={8}
+                readOnly
+                value={part!.combined}
+              />
               <div className="manual-step">
-                <b>2.</b> Dán toàn bộ câu trả lời của Claude vào đây rồi bấm Kiểm tra. Mỗi biến thể được xếp về câu gốc theo
-                dòng <code>@bienthe</code>.
+                <b>2.</b> Dán toàn bộ câu trả lời của Claude vào đây rồi bấm
+                Kiểm tra. Mỗi biến thể được xếp về câu gốc theo dòng{" "}
+                <code>@bienthe</code>.
               </div>
               <textarea
                 className="mono"
@@ -408,11 +629,23 @@ export default function BulkVariantPage() {
                 <button disabled={busy || !output.trim()} onClick={check}>
                   Kiểm tra
                 </button>
-                <button className="primary" disabled={busy || !checked || nNew === 0} onClick={savePart}>
-                  Lưu {nNew} biến thể (nháp){partIdx + 1 < parts.length ? ", sang phần sau" : ""}
+                <button
+                  className="primary"
+                  disabled={busy || !checked || nNew === 0}
+                  onClick={savePart}
+                >
+                  Lưu {nNew} {conv ? "câu tham số" : "biến thể"} (nháp)
+                  {partIdx + 1 < parts.length ? ", sang phần sau" : ""}
                 </button>
                 {partIdx + 1 < parts.length && (
-                  <button className="link" onClick={() => (setPartIdx(partIdx + 1), setOutput(""), setChecked(null))}>
+                  <button
+                    className="link"
+                    onClick={() => (
+                      setPartIdx(partIdx + 1),
+                      setOutput(""),
+                      setChecked(null)
+                    )}
+                  >
                     Bỏ qua phần này
                   </button>
                 )}

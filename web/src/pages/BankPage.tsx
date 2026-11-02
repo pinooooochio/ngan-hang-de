@@ -42,13 +42,13 @@ export default function BankPage() {
   const [message, setMessage] = useState("");
   const [group, setGroup] = useState<VariantGroup | null>(null);
   const navigate = useNavigate();
-  const variantSelected = () => {
+  const variantSelected = (param = false) => {
     try {
       sessionStorage.setItem(PICKED_KEY, JSON.stringify([...selected]));
     } catch {
       /* không lưu được: trang sinh biến thể sẽ không có câu đã chọn */
     }
-    navigate("/sinh/bien-the?chon=1");
+    navigate(`/sinh/bien-the?chon=1${param ? "&thamso=1" : ""}`);
   };
 
   const setFilter = (key: string, value: string) => {
@@ -394,7 +394,7 @@ function BulkBar({
 }: {
   admin: boolean;
   onMerge: () => void;
-  onVariants: () => void;
+  onVariants: (param?: boolean) => void;
   count: number;
   tags: TagNode[];
   onApply: (body: { add_tag?: string; set_tag?: string; level?: Level; status?: Status }) => void;
@@ -425,8 +425,14 @@ function BulkBar({
           </option>
         ))}
       </select>
-      <button onClick={onVariants} title="Sinh câu cùng dạng, khác số liệu cho các câu đã chọn (chỉ câu đã duyệt)">
+      <button onClick={() => onVariants()} title="Sinh câu cùng dạng, khác số liệu cho các câu đã chọn (chỉ câu đã duyệt)">
         Sinh biến thể
+      </button>
+      <button
+        onClick={() => onVariants(true)}
+        title="Claude viết lại các câu đã chọn thành câu tham số (đổi số mỗi lần ra đề); chỉ câu trắc nghiệm, trả lời ngắn đã duyệt"
+      >
+        Chuyển thành câu tham số
       </button>
       {count > 1 && (
         <button onClick={onMerge} title="Các câu cùng dạng, chỉ khác số liệu: mỗi đề sẽ chỉ lấy một câu của nhóm">
