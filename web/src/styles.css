@@ -1461,3 +1461,43 @@ label.button:hover {
 .gen-table {
   margin: 4px 0;
 }
+
+/* Danh sách sinh nhiều ô */
+#gen-form .toolbar h3 {
+  margin: 0;
+}
+.gen-rows input:not([type="checkbox"]),
+.gen-rows select {
+  width: 100%;
+}
+.gen-rows td {
+  vertical-align: middle;
+}
+.gen-rows input.num {
+  width: 70px;
+}
+.gen-rows .center {
+  text-align: center;
+}
+.gen-notes {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.gen-notes textarea {
+  width: 100%;
+}
+.gen-check-row h4 {
+  margin: 12px 0 6px;
+}
+.warn-text {
+  color: var(--warn);
+}
+.gen-rows th:first-child {
+  width: 34%;
+}
+.gen-rows th:nth-child(2) {
+  width: 24%;
+}

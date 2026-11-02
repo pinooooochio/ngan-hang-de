@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   api,
   LEVELS,
@@ -10,11 +10,12 @@ import {
   type Curriculum,
   type GenBatch,
   type GenItem,
+  type GenMultiCheck,
   type GenParams,
   type Level,
   type QType,
 } from "../api";
-import GenHistory from "../components/GenHistory";
+import GenHistory, { bankLink } from "../components/GenHistory";
 import Tex from "../components/Tex";
 
 const TARGET_KEY = "nhd.gen.target";
@@ -29,19 +30,24 @@ function readTarget() {
 
 export { STATUS_LABEL, bankLink } from "../components/GenHistory";
 
+/** Một ô trong danh sách sinh. */
+type Row = GenParams & { key: number };
+let nextKey = 1;
+
 export default function GeneratePage() {
-  const navigate = useNavigate();
   const [cur, setCur] = useState<Curriculum | null>(null);
   const [grade, setGrade] = useState("Lớp 12");
   const [topics, setTopics] = useState<CoverageTopic[]>([]);
   const [target, setTarget] = useState(readTarget);
-  const [params, setParams] = useState<GenParams>({ grade: "Lớp 12", topic: "", level: "NB", type: "mcq", count: 10 });
+  const [rows, setRows] = useState<Row[]>([]);
+  const [notes, setNotes] = useState("");
   const [batches, setBatches] = useState<GenBatch[]>([]);
   const [prompt, setPrompt] = useState("");
   const [output, setOutput] = useState("");
-  const [checked, setChecked] = useState<GenItem[] | null>(null);
+  const [checked, setChecked] = useState<GenMultiCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState<GenBatch[] | null>(null);
   const [copied, setCopied] = useState(false);
   const [focusTopic, setFocusTopic] = useState<string>();
 
@@ -52,7 +58,6 @@ export default function GeneratePage() {
 
   useEffect(() => {
     api.genCoverage(grade).then((r) => setTopics(r.topics));
-    setParams((p) => ({ ...p, grade, topic: p.grade === grade ? p.topic : "", dang: undefined }));
   }, [grade]);
 
   // Còn lần sinh đang chạy thì hỏi lại sau 3 giây
@@ -66,10 +71,31 @@ export default function GeneratePage() {
     return () => clearInterval(t);
   }, [running, grade]);
 
-  const update = (patch: Partial<GenParams>) => {
-    setParams({ ...params, ...patch });
+  const maxCount = cur?.max_count ?? 30;
+  const maxTotal = cur?.max_total ?? 60;
+  const total = rows.reduce((s, r) => s + (r.count || 0), 0);
+
+  // Đổi danh sách thì prompt và kết quả kiểm tra cũ không còn đúng
+  const changeRows = (next: Row[]) => {
+    setRows(next);
     setPrompt("");
     setChecked(null);
+    setSaved(null);
+  };
+  const updateRow = (key: number, patch: Partial<GenParams>) =>
+    changeRows(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const newRow = (patch: Partial<GenParams>): Row => {
+    const last = rows[rows.length - 1];
+    return {
+      key: nextKey++,
+      grade,
+      topic: "",
+      level: "NB",
+      type: last?.type ?? "mcq",
+      count: 5,
+      figure: last?.figure,
+      ...patch,
+    };
   };
 
   const saveTarget = (n: number) => {
@@ -81,11 +107,33 @@ export default function GeneratePage() {
     }
   };
 
-  const pickCell = (t: CoverageTopic, level: Level) => {
-    update({ topic: t.name, level, dang: undefined });
+  const missing = (have: number) => Math.min(maxCount, Math.max(1, target - have));
+  const inCart = (topic: string, level: Level) => rows.some((r) => r.grade === grade && r.topic === topic && r.level === level);
+
+  // Bấm ô: thêm vào danh sách (số câu = phần còn thiếu so với mục tiêu), bấm lần nữa thì bỏ ra
+  const pickCell = (t: CoverageTopic, level: Level, have: number) => {
     setFocusTopic(t.name);
-    document.getElementById("gen-form")?.scrollIntoView({ behavior: "smooth" });
+    if (inCart(t.name, level)) {
+      changeRows(rows.filter((r) => !(r.grade === grade && r.topic === t.name && r.level === level)));
+    } else {
+      changeRows([...rows, newRow({ topic: t.name, level, count: missing(have) })]);
+    }
   };
+
+  const fillTargets = () => {
+    const add: Row[] = [];
+    for (const t of topics.filter((x) => x.in_curriculum)) {
+      for (const l of LEVELS) {
+        const c = t.counts[l.value] ?? { approved: 0, draft: 0 };
+        if (c.approved + c.draft < target && !inCart(t.name, l.value))
+          add.push(newRow({ topic: t.name, level: l.value, count: missing(c.approved + c.draft) }));
+      }
+    }
+    changeRows([...rows, ...add]);
+  };
+
+  const params = (): GenParams[] =>
+    rows.map(({ key: _key, ...r }) => ({ ...r, notes: notes.trim() || undefined }));
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -99,15 +147,21 @@ export default function GeneratePage() {
     }
   };
 
-  const generate = () =>
-    run(async () => {
-      const b = await api.genCreate(params, "api");
-      setBatches([b, ...batches]);
-    });
+  const afterSave = (g: { batches: GenBatch[] }) => {
+    setBatches([...g.batches, ...batches.filter((b) => !g.batches.some((x) => x.id === b.id))].sort((a, b) => b.id - a.id));
+    setSaved(g.batches);
+    setRows([]);
+    setPrompt("");
+    setOutput("");
+    setChecked(null);
+    api.genCoverage(grade).then((r) => setTopics(r.topics));
+  };
+
+  const generate = () => run(async () => afterSave(await api.genCreateMulti(params(), "api")));
 
   const getPrompt = () =>
     run(async () => {
-      const r = await api.genPrompt(params);
+      const r = await api.genPromptMulti(params());
       setPrompt(r.combined);
       setCopied(false);
     });
@@ -121,23 +175,18 @@ export default function GeneratePage() {
     }
   };
 
-  const check = () => run(async () => setChecked(await api.genCheck(params, output)));
+  const check = () => run(async () => setChecked(await api.genCheckMulti(params(), output)));
+  const saveManual = () => run(async () => afterSave(await api.genCreateMulti(params(), "manual", output)));
 
-  const saveManual = () =>
-    run(async () => {
-      const b = await api.genCreate(params, "manual", output);
-      navigate(`/sinh/${b.id}`);
-    });
-
-  const topic = topics.find((t) => t.name === params.topic);
-  const ready = params.topic.trim() !== "" && params.count > 0;
-  const nNew = checked?.filter((i) => i.state === "new").length ?? 0;
+  const ready = rows.length > 0 && rows.every((r) => r.topic.trim() && r.count > 0) && total <= maxTotal;
+  const nNew = checked?.rows.flat().filter((i) => i.state === "new").length ?? 0;
+  const topicsOf = (g: string) => cur?.grades.find((x) => x.ten === g)?.chu_de ?? [];
 
   return (
     <div className="generate">
       <h2>Sinh câu hỏi bằng AI</h2>
       <p className="hint">
-        Chọn ô còn thiếu trong bảng, sinh câu bằng Claude, rồi đọc lại và duyệt. Câu sinh ra luôn vào ngân hàng ở trạng thái
+        Bấm các ô còn thiếu trong bảng để đưa vào danh sách sinh (mỗi ô chỉnh riêng dạng, loại câu, số câu), sinh bằng Claude, rồi đọc lại và duyệt. Câu sinh ra luôn vào ngân hàng ở trạng thái
         nháp, chưa dùng để ra đề cho tới khi được duyệt.
       </p>
 
@@ -191,13 +240,13 @@ export default function GeneratePage() {
                 const c = t.counts[l.value] ?? { approved: 0, draft: 0 };
                 const ratio = Math.min(1, c.approved / target);
                 const cls = ratio >= 1 ? "full" : ratio >= 0.5 ? "half" : ratio > 0 ? "low" : "zero";
-                const active = params.topic === t.name && params.level === l.value;
+                const active = inCart(t.name, l.value);
                 return (
                   <td key={l.value}>
                     <button
                       className={`cov-cell ${cls} ${active ? "active" : ""}`}
-                      title={`${c.approved} câu đã duyệt, ${c.draft} câu nháp. Bấm để sinh thêm.`}
-                      onClick={() => pickCell(t, l.value)}
+                      title={`${c.approved} câu đã duyệt, ${c.draft} câu nháp. Bấm để thêm vào (hoặc bỏ khỏi) danh sách sinh.`}
+                      onClick={() => pickCell(t, l.value, c.approved + c.draft)}
                     >
                       {c.approved}
                       {c.draft > 0 && <span className="cov-draft">+{c.draft}</span>}
@@ -213,85 +262,161 @@ export default function GeneratePage() {
       <p className="hint">Số trong ô là câu đã duyệt, "+n" là câu nháp chờ duyệt. Màu theo mục tiêu mỗi ô.</p>
 
       <section id="gen-form" className="section-card">
-        <h3>Yêu cầu sinh câu</h3>
-        <div className="gen-grid">
-          <label className="wide">
-            Chủ đề
-            <input list="gen-topics" value={params.topic} onChange={(e) => update({ topic: e.target.value, dang: undefined })} />
-            <datalist id="gen-topics">
-              {topics.map((t) => (
-                <option key={t.path} value={t.name} />
-              ))}
-            </datalist>
-          </label>
-          <label className="wide">
-            Dạng bài
-            <select value={params.dang ?? ""} onChange={(e) => update({ dang: e.target.value || undefined })}>
-              <option value="">Phân bổ đều các dạng</option>
-              {topic?.dang.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Mức độ
-            <select value={params.level} onChange={(e) => update({ level: e.target.value as Level })}>
-              {LEVELS.map((l) => (
-                <option key={l.value} value={l.value}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Loại câu
-            <select value={params.type} onChange={(e) => update({ type: e.target.value as QType })}>
-              {TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Số câu
-            <input
-              type="number"
-              min={1}
-              max={cur?.max_count ?? 30}
-              value={params.count}
-              onChange={(e) => update({ count: Number(e.target.value) || 0 })}
-            />
-          </label>
-          <label className="check full">
-            <input type="checkbox" checked={!!params.figure} onChange={(e) => update({ figure: e.target.checked || undefined })} />
-            Câu có hình vẽ (đồ thị, bảng biến thiên, hình phẳng, hình không gian vẽ bằng TikZ)
-          </label>
-          <label className="full">
-            Yêu cầu thêm (tuỳ chọn)
-            <textarea
-              rows={2}
-              value={params.notes ?? ""}
-              onChange={(e) => update({ notes: e.target.value || undefined })}
-              placeholder="Ví dụ: có 3 câu bài toán thực tế; tránh dùng căn thức"
-            />
-          </label>
+        <div className="toolbar">
+          <h3>Danh sách sinh</h3>
+          <span className="muted small">
+            {rows.length} ô · {total}/{maxTotal} câu
+          </span>
+          <span className="spacer" />
+          <button className="link" onClick={fillTargets}>
+            Lấp đầy mục tiêu ({grade})
+          </button>
+          <button className="link" onClick={() => changeRows([...rows, newRow({})])}>
+            + Thêm dòng
+          </button>
+          {rows.length > 0 && (
+            <button className="link" onClick={() => changeRows([])}>
+              Xoá hết
+            </button>
+          )}
         </div>
 
+        {rows.length === 0 ? (
+          <p className="muted">
+            Chưa có ô nào. Bấm vào các ô trong bảng ở trên, hoặc "Lấp đầy mục tiêu" để thêm mọi ô còn thiếu của {grade}.
+          </p>
+        ) : (
+          <table className="table gen-rows">
+            <thead>
+              <tr>
+                <th>Chủ đề</th>
+                <th>Dạng bài</th>
+                <th>Mức độ</th>
+                <th>Loại câu</th>
+                <th>Số câu</th>
+                <th title="Mỗi câu có hình vẽ TikZ (đồ thị, bảng biến thiên, hình phẳng, hình không gian)">Có hình</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const ct = topicsOf(r.grade).find((t) => t.ten === r.topic);
+                return (
+                  <tr key={r.key}>
+                    <td>
+                      {r.grade !== grade && <div className="muted small">{r.grade}</div>}
+                      <input
+                        list={`gen-topics-${r.key}`}
+                        value={r.topic}
+                        onChange={(e) => updateRow(r.key, { topic: e.target.value, dang: undefined })}
+                        placeholder="Chọn chủ đề"
+                      />
+                      <datalist id={`gen-topics-${r.key}`}>
+                        {topicsOf(r.grade).map((t) => (
+                          <option key={t.path} value={t.ten} />
+                        ))}
+                      </datalist>
+                    </td>
+                    <td>
+                      <select value={r.dang ?? ""} onChange={(e) => updateRow(r.key, { dang: e.target.value || undefined })}>
+                        <option value="">Đều các dạng</option>
+                        {ct?.dang.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select value={r.level} onChange={(e) => updateRow(r.key, { level: e.target.value as Level })}>
+                        {LEVELS.map((l) => (
+                          <option key={l.value} value={l.value}>
+                            {l.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select value={r.type} onChange={(e) => updateRow(r.key, { type: e.target.value as QType })}>
+                        {TYPES.map((t) => (
+                          <option key={t.value} value={t.value}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        className="num"
+                        min={1}
+                        max={maxCount}
+                        value={r.count}
+                        onChange={(e) => updateRow(r.key, { count: Math.min(maxCount, Number(e.target.value) || 0) })}
+                      />
+                    </td>
+                    <td className="center">
+                      <input
+                        type="checkbox"
+                        checked={!!r.figure}
+                        onChange={(e) => updateRow(r.key, { figure: e.target.checked || undefined })}
+                      />
+                    </td>
+                    <td>
+                      <button className="link" title="Bỏ dòng này" onClick={() => changeRows(rows.filter((x) => x.key !== r.key))}>
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        {total > maxTotal && (
+          <div className="alert warn">
+            Mỗi đợt tối đa {maxTotal} câu; hãy bớt số câu hoặc chia thành nhiều đợt.
+          </div>
+        )}
+
+        <label className="gen-notes">
+          Yêu cầu thêm cho cả đợt (tuỳ chọn)
+          <textarea
+            rows={2}
+            value={notes}
+            onChange={(e) => {
+              setNotes(e.target.value);
+              setPrompt("");
+              setChecked(null);
+            }}
+            placeholder="Ví dụ: có 3 câu bài toán thực tế; tránh dùng căn thức"
+          />
+        </label>
+
         {error && <div className="alert error">{error}</div>}
+        {saved && (
+          <div className="alert ok">
+            Đã tạo {saved.length} lần sinh.{" "}
+            {saved.some((b) => b.status === "pending") ? (
+              <>Claude đang soạn lần lượt từng ô, xem tiến độ ở "Các lần sinh" bên dưới.</>
+            ) : (
+              <Link to={bankLink(saved.map((b) => b.source).join("|"))}>
+                Duyệt {saved.reduce((s, b) => s + b.n_added, 0)} câu mới của đợt này
+              </Link>
+            )}
+          </div>
+        )}
 
         <div className="toolbar">
           <button className="primary" disabled={busy || !ready || !cur?.api} onClick={generate}>
-            Sinh bằng Claude
+            Sinh bằng Claude{rows.length > 1 ? ` (${rows.length} ô)` : ""}
           </button>
           <button disabled={busy || !ready} onClick={getPrompt}>
             Lấy prompt để tự dán vào Claude
           </button>
           <span className="muted small">
             {cur?.api ? (
-              <>Máy chủ gọi {cur.model}, mất khoảng một đến vài phút.</>
+              <>Máy chủ gọi {cur.model}, mỗi ô là một lần sinh, chạy lần lượt.</>
             ) : (
               <>Máy chủ chưa có ANTHROPIC_API_KEY nên chưa sinh trực tiếp được; dùng cách lấy prompt.</>
             )}
@@ -306,7 +431,8 @@ export default function GeneratePage() {
             </div>
             <textarea className="mono" rows={8} readOnly value={prompt} />
             <div className="manual-step">
-              <b>2.</b> Dán toàn bộ câu trả lời của Claude vào đây rồi bấm Kiểm tra.
+              <b>2.</b> Dán toàn bộ câu trả lời của Claude vào đây rồi bấm Kiểm tra. Mỗi câu được xếp về ô của nó theo dòng
+              @tags và @level.
             </div>
             <textarea
               className="mono"
@@ -326,7 +452,36 @@ export default function GeneratePage() {
                 Lưu {nNew} câu mới vào ngân hàng (nháp)
               </button>
             </div>
-            {checked && <GenItems items={checked} />}
+            {checked && (
+              <>
+                {rows.map((r, i) => {
+                  const items = checked.rows[i] ?? [];
+                  const n = items.filter((x) => x.state === "new").length;
+                  return (
+                    <div key={r.key} className="gen-check-row">
+                      <h4>
+                        Ô {i + 1}: {r.topic} · {levelLabel(r.level)} · {typeLabel(r.type)}{" "}
+                        <span className={n < r.count ? "warn-text" : "muted"}>
+                          ({n}/{r.count} câu mới)
+                        </span>
+                      </h4>
+                      {items.length > 0 ? <GenItems items={items} /> : <div className="alert warn small">Không có câu nào cho ô này.</div>}
+                    </div>
+                  );
+                })}
+                {checked.unmatched.length > 0 && (
+                  <div className="gen-check-row">
+                    <h4>Câu không khớp ô nào (sẽ bỏ qua)</h4>
+                    {checked.unmatched.map((u) => (
+                      <div key={u.index} className="alert warn small">
+                        Câu {u.index}: {u.tags.map((t) => t.join(" › ")).join("; ") || "không có @tags"} ·{" "}
+                        {u.level ?? "không có @level"} · {typeLabel(u.type)} — {u.stem}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </section>

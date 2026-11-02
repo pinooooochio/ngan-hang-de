@@ -202,7 +202,7 @@ export default function BankPage() {
           )}
           {filters.source && (
             <span className="tag">
-              Nguồn: {filters.source}{" "}
+              Nguồn: {filters.source.split("|").join(", ")}{" "}
               <button className="link" onClick={() => setFilter("nguon", "")}>
                 ✕
               </button>

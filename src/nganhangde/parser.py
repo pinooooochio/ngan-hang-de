@@ -273,8 +273,8 @@ def mask_comments(s: str) -> str:
     return re.sub(r"(?<!\\)%.*", lambda m: " " * len(m.group(0)), s)
 
 
-def parse_text(text: str) -> list[ParsedQuestion]:
-    out = []
+def _blocks(text: str):
+    """Từng khối \\begin{ex}...\\end{ex}: (match, các dòng chú thích ngay trước khối)."""
     prev_end = 0
     # Tìm khối trên bản đã che chú thích để bỏ qua "\begin{ex}" nằm trong chú thích
     for m in BLOCK_RE.finditer(mask_comments(text)):
@@ -287,8 +287,18 @@ def parse_text(text: str) -> list[ParsedQuestion]:
                 meta_lines.append(ln)
             else:
                 break
-        preamble = "\n".join(reversed(meta_lines))
+        yield m, "\n".join(reversed(meta_lines))
+        prev_end = m.end()
+
+
+def parse_text(text: str) -> list[ParsedQuestion]:
+    out = []
+    for m, preamble in _blocks(text):
         line = text.count("\n", 0, m.start()) + 1
         out.append(parse_block(text[m.start(1):m.end(1)], preamble, line))
-        prev_end = m.end()
     return out
+
+
+def split_blocks(text: str) -> list[str]:
+    """Tách văn bản thành mã nguồn từng câu (dòng chú thích siêu dữ liệu + khối ex)."""
+    return [f"{preamble}\n{text[m.start():m.end()]}".strip() + "\n" for m, preamble in _blocks(text)]

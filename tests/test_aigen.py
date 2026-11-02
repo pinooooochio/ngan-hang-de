@@ -218,3 +218,70 @@ def test_batch_list_has_creator_and_pending(app):
     code = next(it["code"] for it in b["items"] if it["code"])
     assert c.post("/api/questions/bulk", json={"codes": [code], "status": "approved"}).status_code == 200
     assert c.get("/api/gen/batches").json()[0]["n_pending"] == 1
+
+
+ROWS = [
+    {"grade": "Lớp 12", "topic": "Vectơ trong không gian", "level": "NB", "type": "mcq", "count": 1},
+    {"grade": "Lớp 12", "topic": "Vectơ trong không gian", "level": "TH", "type": "short", "count": 1},
+    {"grade": "Lớp 11", "topic": "Khoảng cách trong không gian", "level": "VD", "type": "mcq", "count": 2},
+]
+
+MULTI_OUTPUT = r"""% @tags: Lớp 11 / Khoảng cách trong không gian / Khoảng cách từ điểm đến mặt phẳng ; @level: VD
+\begin{ex}
+  Cho hình lập phương cạnh $a=2$. Khoảng cách từ một đỉnh tới mặt phẳng chứa mặt đối diện bằng
+  \choice{\True $2$}{$1$}{$\sqrt2$}{$4$}
+  \loigiai{Bằng độ dài cạnh.}
+\end{ex}
+
+% @tags: Lớp 12 / Vectơ trong không gian / Tọa độ điểm ; @level: NB
+\begin{ex}
+  Trong không gian $Oxyz$, hình chiếu của $M(3;4;5)$ lên trục $Ox$ là
+  \choice{\True $(3;0;0)$}{$(0;4;0)$}{$(0;0;5)$}{$(3;4;0)$}
+  \loigiai{Giữ hoành độ.}
+\end{ex}
+
+% @tags: Lớp 12 / Vectơ trong không gian / Tích vô hướng ; @level: TH
+\begin{ex}
+  Cho $\vec a=(1;2;3)$, $\vec b=(2;1;1)$. Tính $\vec a\cdot\vec b$.
+  \shortans{7}
+  \loigiai{$2+2+3=7$.}
+\end{ex}
+
+% @tags: Lớp 10 / Hệ thức lượng ; @level: NB
+\begin{ex}
+  Câu lạc đề. \choice{\True $1$}{$2$}{$3$}{$4$}
+\end{ex}
+"""
+
+
+def test_multi_rows_prompt_check_and_save(app):
+    c = app.state.client
+    p = c.post("/api/gen/prompt/multi", json={"rows": ROWS}).json()
+    assert "## Ô 3" in p["user"] and "tổng cộng 4 câu" in p["user"] and "(1 + 1 + 2 theo thứ tự các ô)" in p["user"]
+    assert "% @tags: Lớp 11 / Khoảng cách trong không gian / <Dạng bài> ; @level: VD" in p["user"]
+
+    r = c.post("/api/gen/check/multi", json={"rows": ROWS, "output": MULTI_OUTPUT}).json()
+    assert [len(x) for x in r["rows"]] == [1, 1, 1]
+    assert r["rows"][2][0]["tags"] == [["Lớp 11", "Khoảng cách trong không gian", "Khoảng cách từ điểm đến mặt phẳng"]]
+    assert len(r["unmatched"]) == 1 and "lạc đề" in r["unmatched"][0]["stem"]
+
+    res = c.post("/api/gen/batches/multi", json={"rows": ROWS, "mode": "manual", "output": MULTI_OUTPUT})
+    assert res.status_code == 201, res.text
+    g = res.json()
+    assert len(g["batches"]) == 3 and all(b["group_id"] == g["group_id"] for b in g["batches"])
+    assert [b["n_added"] for b in g["batches"]] == [1, 1, 1]
+    # cả đợt mở ở ngân hàng bằng bộ lọc nhiều nguồn
+    sources = "|".join(b["source"] for b in g["batches"])
+    assert c.get("/api/questions", params={"source": sources}).json()["total"] == 3
+
+    too_many = [{**ROWS[0], "count": 30}, {**ROWS[1], "count": 30}, {**ROWS[2], "count": 1}]
+    assert c.post("/api/gen/prompt/multi", json={"rows": too_many}).status_code == 422
+    assert c.post("/api/gen/batches/multi", json={"rows": ROWS, "mode": "api"}).status_code == 422  # chưa có khoá
+
+
+def test_multi_rows_api_mode_queues_one_batch_per_row(app, monkeypatch):
+    c = app.state.client
+    monkeypatch.setattr(aigen, "CALLER", lambda s, u, m: ("", {"input_tokens": 1, "output_tokens": 1}))
+    g = c.post("/api/gen/batches/multi", json={"rows": ROWS, "mode": "api"}).json()
+    assert [b["status"] for b in g["batches"]] == ["pending"] * 3
+    assert len({b["group_id"] for b in g["batches"]}) == 1
