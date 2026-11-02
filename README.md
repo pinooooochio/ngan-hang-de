@@ -124,10 +124,10 @@ Nên cho thư mục `backups` đồng bộ lên Google Drive / OneDrive (hoặc 
   mỗi ô. Đại học theo khung Bách khoa, mỗi học phần một nhánh thẻ bốn tầng
   `Giải tích 1 / Chương 1. Hàm số một biến số / <chủ đề> / <dạng>`; bảng độ phủ chia theo chương. Giải tích 1 lấy
   theo đề cương (kiến thức trọng tâm và định hướng câu trắc nghiệm / tự luận được đưa vào prompt); Giải tích 2, 3,
-  Đại số, Xác suất thống kê là bản nháp, sửa trong file khung chương trình. Bấm một ô để điền yêu cầu (dạng bài, loại câu, số câu, yêu cầu thêm), rồi:
+  Đại số, Xác suất thống kê là bản nháp, sửa trong file khung chương trình. Bấm ô để thêm một dòng vào danh sách sinh, hoặc **+ Thêm chủ đề** để tick nhiều chủ đề / dạng trên cây và các mức độ (mỗi chủ đề × mức độ một dòng, mặc định 10 câu); mỗi dòng chỉnh riêng dạng, loại, số câu, rồi:
   - **Sinh bằng Claude**: máy chủ gọi Claude API chạy nền, cần biến `ANTHROPIC_API_KEY` (mô hình đổi bằng `NHD_MODEL`,
-    mặc định `claude-opus-5-5`). Prompt hệ thống cố định nên được cache giữa các lần gọi.
-  - **Lấy prompt**: chép prompt dán vào Claude, dán câu trả lời lại để kiểm tra rồi lưu. Không cần khoá API.
+    mặc định `claude-opus-5-5`). Mỗi dòng một lần gọi, tối đa 300 câu mỗi đợt. Prompt hệ thống cố định nên được cache giữa các lần gọi.
+  - **Lấy prompt**: chép prompt dán vào Claude, dán câu trả lời lại để kiểm tra rồi lưu. Không cần khoá API. Danh sách hơn 60 câu được chia thành nhiều phần, lưu lần lượt, chung một đợt.
 
   Prompt gồm định dạng ex_test, quy tắc từng loại câu theo đề THPT 2025 (trả lời ngắn tối đa 4 kí tự, đúng/sai 4 ý
   có cả đúng lẫn sai...), định nghĩa mức độ, câu mẫu đã duyệt cùng chủ đề và danh sách câu đã có để tránh trùng.
