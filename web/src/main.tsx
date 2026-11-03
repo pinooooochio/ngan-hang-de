@@ -1,7 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import { AuthProvider, homeOf, useAuth } from "./auth";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Nav, { allowed } from "./components/Nav";
 import AccountPage from "./pages/AccountPage";
 import AttemptPage from "./pages/AttemptPage";
@@ -18,7 +25,9 @@ import GeneratePage from "./pages/GeneratePage";
 import ImportPage from "./pages/ImportPage";
 import LoginPage from "./pages/LoginPage";
 import LogPage from "./pages/LogPage";
-import PracticeHomePage, { PracticeResultsPage } from "./pages/PracticeHomePage";
+import PracticeHomePage, {
+  PracticeResultsPage,
+} from "./pages/PracticeHomePage";
 import RequestsPage from "./pages/RequestsPage";
 import SettingsPage from "./pages/SettingsPage";
 import TagsPage from "./pages/TagsPage";
@@ -29,39 +38,44 @@ import "./styles.css";
 function Guarded() {
   const { me } = useAuth();
   const { pathname } = useLocation();
-  if (!allowed(me.role, pathname)) return <Navigate to={homeOf(me.role)} replace />;
+  if (!allowed(me.role, pathname))
+    return <Navigate to={homeOf(me.role)} replace />;
   return (
-    <Routes>
-      <Route path="/" element={<BankPage />} />
-      <Route path="/cau/moi" element={<EditorPage />} />
-      <Route path="/cau/:code" element={<EditorPage />} />
-      <Route path="/import" element={<ImportPage />} />
-      <Route path="/the" element={<TagsPage />} />
-      <Route path="/de" element={<ExamListPage />} />
-      <Route path="/de/moi" element={<ExamNewPage />} />
-      <Route path="/de/:id" element={<ExamDetailPage />} />
-      <Route path="/sinh" element={<GeneratePage />} />
-      <Route path="/sinh/:id" element={<GenBatchPage />} />
-      <Route path="/sinh/bien-the" element={<BulkVariantPage />} />
-      <Route path="/sinh/bien-the/:code" element={<VariantPage />} />
-      <Route path="/luyen" element={<PracticeHomePage />} />
-      <Route path="/luyen/ket-qua" element={<PracticeResultsPage />} />
-      <Route path="/luyen/:id" element={<AttemptPage />} />
-      <Route path="/tai-khoan" element={<AccountPage />} />
-      <Route path="/cai-dat" element={<SettingsPage />} />
-      <Route path="/cai-dat/nguoi-dung" element={<UsersPage />} />
-      <Route path="/cai-dat/yeu-cau" element={<RequestsPage />} />
-      <Route path="/cai-dat/nhat-ky" element={<LogPage />} />
-      <Route path="/sao-luu" element={<BackupPage />} />
-      <Route path="*" element={<Navigate to={homeOf(me.role)} replace />} />
-    </Routes>
+    <ErrorBoundary resetKey={pathname}>
+      <Routes>
+        <Route path="/" element={<BankPage />} />
+        <Route path="/cau/moi" element={<EditorPage />} />
+        <Route path="/cau/:code" element={<EditorPage />} />
+        <Route path="/import" element={<ImportPage />} />
+        <Route path="/the" element={<TagsPage />} />
+        <Route path="/de" element={<ExamListPage />} />
+        <Route path="/de/moi" element={<ExamNewPage />} />
+        <Route path="/de/:id" element={<ExamDetailPage />} />
+        <Route path="/sinh" element={<GeneratePage />} />
+        <Route path="/sinh/:id" element={<GenBatchPage />} />
+        <Route path="/sinh/bien-the" element={<BulkVariantPage />} />
+        <Route path="/sinh/bien-the/:code" element={<VariantPage />} />
+        <Route path="/luyen" element={<PracticeHomePage />} />
+        <Route path="/luyen/ket-qua" element={<PracticeResultsPage />} />
+        <Route path="/luyen/:id" element={<AttemptPage />} />
+        <Route path="/tai-khoan" element={<AccountPage />} />
+        <Route path="/cai-dat" element={<SettingsPage />} />
+        <Route path="/cai-dat/nguoi-dung" element={<UsersPage />} />
+        <Route path="/cai-dat/yeu-cau" element={<RequestsPage />} />
+        <Route path="/cai-dat/nhat-ky" element={<LogPage />} />
+        <Route path="/sao-luu" element={<BackupPage />} />
+        <Route path="*" element={<Navigate to={homeOf(me.role)} replace />} />
+      </Routes>
+    </ErrorBoundary>
   );
 }
 
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider login={(setup, done) => <LoginPage setup={setup} onDone={done} />}>
+      <AuthProvider
+        login={(setup, done) => <LoginPage setup={setup} onDone={done} />}
+      >
         <Nav />
         <main>
           <Guarded />

@@ -216,7 +216,7 @@ export default function EditorPage() {
                 {question.variant_label && <> · {question.variant_label}</>} ({question.variants?.length ?? 1} câu
                 {question.variant_origin && question.variant_origin !== code && <>, câu gốc {question.variant_origin}</>}):
               </span>
-              {question.variants!.map((v) =>
+              {(question.variants ?? []).map((v) =>
                 v.code === code ? (
                   <span key={v.code} className="tag current">
                     {v.code}
