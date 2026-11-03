@@ -576,3 +576,57 @@ def test_search_by_many_codes(app):
     assert plan["sources"][0]["choices"]  # có cả phương án để xem
     assert {"code": "KHONG-CO", "reason": "không có trong ngân hàng"} in plan["skipped"]
     assert c.post("/api/gen/variants/plan", json={"q": "Tích vô hướng"}).json()["sources"]
+
+
+ALG = r"""% @tags: Đại số / Chương 3. Không gian vectơ / Độc lập tuyến tính, cơ sở và số chiều / Hạng của hệ vectơ ; @level: NB
+\begin{ex}
+  Hạng của hệ vectơ $\{(1;2;3),\ (2;4;6)\}$ bằng
+  \choice{$2$}{\True $1$}{$3$}{$0$}
+  \loigiai{Hai vectơ tỉ lệ nên hạng bằng $1$.}
+\end{ex}
+
+% @tags: Đại số / Chương 3. Không gian vectơ / Độc lập tuyến tính, cơ sở và số chiều / Hạng của hệ vectơ ; @level: VDC
+\begin{ex}
+  Hạng của hệ $\{u+v,\ v+w,\ u-w\}$ bằng
+  \choice{$3$}{\True $2$}{$1$}{$0$}
+  \loigiai{$u-w=(u+v)-(v+w)$ nên hạng bằng $2$.}
+\end{ex}
+"""
+
+
+def test_topic_names_with_commas(app):
+    """Tên chủ đề có dấu phẩy không bị tách thành hai thẻ; prompt gộp nhiều ô chia câu đúng ô."""
+    from nganhangde.parser import parse_text, split_tags
+
+    pq = parse_text(ALG)[0]
+    assert pq.tags == [["Đại số", "Chương 3. Không gian vectơ", "Độc lập tuyến tính, cơ sở và số chiều",
+                        "Hạng của hệ vectơ"]]
+    assert split_tags("Lớp 12 / A, Lớp 11 / B") == [["Lớp 12", "A"], ["Lớp 11", "B"]]
+    c = app.state.client
+    row = {"grade": "Đại số", "topic": "Độc lập tuyến tính, cơ sở và số chiều", "type": "mcq", "count": 1}
+    r = c.post("/api/gen/check/multi", json={"rows": [{**row, "level": "NB"}, {**row, "level": "VDC"}],
+                                             "output": ALG}).json()
+    assert r["unmatched"] == [] and [len(x) for x in r["rows"]] == [1, 1]
+
+
+def test_repair_split_tags(app):
+    from nganhangde import bank
+    from nganhangde.parser import parse_text
+
+    with Session(app.state.engine) as s:
+        q = bank.create_question(s, parse_text(ALG)[0])
+        q.tags = [bank.get_or_create_path(s, ["Đại số", "Chương 3. Không gian vectơ", "Độc lập tuyến tính"]),
+                  bank.get_or_create_path(s, ["cơ sở và số chiều", "Hạng của hệ vectơ"])]
+        s.commit()
+        assert bank.repair_split_tags(s) == 1
+        assert [bank.tag_names(t) for t in q.tags] == [["Đại số", "Chương 3. Không gian vectơ",
+                                                         "Độc lập tuyến tính, cơ sở và số chiều", "Hạng của hệ vectơ"]]
+        assert bank.get_question(s, "12V-001") is not None  # câu khác không bị đụng
+        assert bank.repair_split_tags(s) == 0
+
+
+def test_html_entities_from_web_copy():
+    from nganhangde.parser import parse_text
+
+    q = parse_text(ALG.replace(r"\{(1;2;3)", r"\{(1;2;3)&amp;").replace("tỉ lệ", "p&#39; tỉ lệ"))[0]
+    assert "&amp;" not in q.stem and "(1;2;3)&" in q.stem and "p' tỉ lệ" in q.solution

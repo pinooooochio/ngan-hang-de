@@ -553,6 +553,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     SessionLocal = sessionmaker(engine)
     with SessionLocal() as s:
         bank.migrate_groups(s)  # nhóm biến thể kiểu cũ (mã câu gốc) sang bảng nhóm
+        bank.repair_split_tags(s)  # thẻ bị tách nhầm ở dấu phẩy trong tên chủ đề (bản cũ)
 
     def get_session() -> Iterator[Session]:
         with SessionLocal() as s:

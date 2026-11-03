@@ -177,6 +177,54 @@ def parse_level(value: str) -> Level | None:
     return LEVEL_ALIASES.get(value.strip().lower())
 
 
+_KNOWN: list[str] | None = None
+
+
+def _norm(s: str) -> str:
+    return " ".join(s.replace(",", " , ").split()).lower()
+
+
+def known_names() -> list[str]:
+    """Tên trong khung chương trình (lớp, chương, chủ đề, dạng) đã chuẩn hoá; nhiều tên có dấu phẩy."""
+    global _KNOWN
+    if _KNOWN is None:
+        try:
+            from .aigen import load_curriculum
+
+            names: set[str] = set()
+            for g in load_curriculum():
+                names.add(g["ten"])
+                for t in g["chu_de"]:
+                    names.update(t["names"])
+                    names.update(t["dang"])
+            _KNOWN = sorted(_norm(n) for n in names if n)
+        except Exception:  # khung chương trình lỗi: chỉ dùng quy tắc chữ thường
+            _KNOWN = []
+    return _KNOWN
+
+
+def split_tags(value: str) -> list[list[str]]:
+    """Tách giá trị @tags thành các đường dẫn. Dấu phẩy ngăn các thẻ, nhưng tên chủ đề cũng có thể chứa dấu
+    phẩy ("Độc lập tuyến tính, cơ sở và số chiều"): phần sau dấu phẩy được nối vào tên trước nếu ghép lại là
+    (đầu của) một tên trong khung chương trình, hoặc bắt đầu bằng chữ thường."""
+    paths: list[str] = []
+    for tok in value.split(","):
+        if paths and tok.strip():
+            last = paths[-1].split("/")[-1].strip()
+            head = tok.split("/")[0].strip()
+            joined = _norm(f"{last}, {head}")
+            if head[:1].islower() or any(n.startswith(joined) for n in known_names()):
+                paths[-1] += "," + tok
+                continue
+        paths.append(tok)
+    out = []
+    for path in paths:
+        names = [" ".join(p.split()) for p in path.split("/") if p.strip()]
+        if names:
+            out.append(names)
+    return out
+
+
 def parse_block(raw: str, preamble: str, line: int) -> ParsedQuestion:
     meta = parse_meta(preamble)
     meta.update(parse_meta(raw))
@@ -231,10 +279,7 @@ def parse_block(raw: str, preamble: str, line: int) -> ParsedQuestion:
         if q.level is None:
             q.warnings.append(f"mức độ không hợp lệ: {meta['level']!r}")
     if "tags" in meta:
-        for path in meta["tags"].split(","):
-            names = [p.strip() for p in path.split("/") if p.strip()]
-            if names:
-                q.tags.append(names)
+        q.tags.extend(split_tags(meta["tags"]))
     if ex_id_match:
         q.ex_id = ex_id_match.group(1)
         if q.level is None:
@@ -304,7 +349,20 @@ def _blocks(text: str):
         prev_end = m.end()
 
 
+HTML_ENTITY_RE = re.compile(r"&(?:amp|lt|gt|quot|#39|#x27|nbsp);")
+
+
+def unescape_html(text: str) -> str:
+    """Văn bản chép từ trang web đôi khi còn mã HTML (&amp; thay cho &, &#39; thay cho '): đổi lại về ký tự gốc."""
+    if not HTML_ENTITY_RE.search(text):
+        return text
+    import html
+
+    return html.unescape(text).replace("\xa0", " ")
+
+
 def parse_text(text: str) -> list[ParsedQuestion]:
+    text = unescape_html(text)
     out = []
     for m, preamble in _blocks(text):
         line = text.count("\n", 0, m.start()) + 1
@@ -314,4 +372,5 @@ def parse_text(text: str) -> list[ParsedQuestion]:
 
 def split_blocks(text: str) -> list[str]:
     """Tách văn bản thành mã nguồn từng câu (dòng chú thích siêu dữ liệu + khối ex)."""
+    text = unescape_html(text)
     return [f"{preamble}\n{text[m.start():m.end()]}".strip() + "\n" for m, preamble in _blocks(text)]

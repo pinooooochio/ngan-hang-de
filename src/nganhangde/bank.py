@@ -537,3 +537,50 @@ def fix_groups(session: Session, codes) -> None:
         g = get_group(session, code)
         if g is not None:
             _fix_origin(session, g)
+
+
+def _merge_split(paths: list[list[str]]) -> list[list[str]]:
+    """Ghép lại các thẻ bị tách nhầm ở dấu phẩy trong tên ("... / Độc lập tuyến tính" + "cơ sở và số chiều / ...")."""
+    from .parser import _norm, known_names
+
+    names = known_names()
+    paths = [list(p) for p in paths]
+    changed = True
+    while changed and len(paths) > 1:
+        changed = False
+        for a in paths:
+            for b in paths:
+                if a is b:
+                    continue
+                joined = f"{a[-1]}, {b[0]}"
+                key = _norm(joined)
+                lone = len(paths) == 2 and b[0][:1].islower()
+                if lone or any(n.startswith(key) for n in names):
+                    merged = a[:-1] + [joined] + b[1:]
+                    paths = [p for p in paths if p is not a and p is not b] + [merged]
+                    changed = True
+                    break
+            if changed:
+                break
+    return paths
+
+
+def repair_split_tags(session: Session) -> int:
+    """Sửa thẻ của các câu import trước đây bị tách đôi ở dấu phẩy trong tên chủ đề. Trả về số câu đã sửa."""
+    multi = select(QuestionTag.question_id).group_by(QuestionTag.question_id).having(func.count() > 1)
+    fixed = 0
+    old_paths: set[str] = set()
+    for q in session.scalars(select(Question).where(Question.id.in_(multi))):
+        before = [tag_names(t) for t in q.tags]
+        after = _merge_split(before)
+        if after == before:
+            continue
+        old_paths.update(t.path for t in q.tags)
+        q.tags = list({id(n): n for n in (get_or_create_path(session, p) for p in after)}.values())
+        fixed += 1
+    if fixed:
+        session.flush()
+        for path in old_paths:
+            prune_tags(session, path)
+        session.commit()
+    return fixed
