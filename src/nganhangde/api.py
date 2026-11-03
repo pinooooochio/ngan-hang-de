@@ -775,6 +775,10 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         q = bank.get_question(session, code)
         if q is None:
             raise HTTPException(404, f"không có câu {code}")
+        return question_detail(session, q)
+
+    def question_detail(session: Session, q: Question) -> dict:
+        """Câu đầy đủ kèm nhóm biến thể (trang soạn câu cần các trường này cả sau khi lưu)."""
         members = bank.variant_members(session, q)
         g = bank.get_group(session, q.variant_group)
         return {**question_json(q), "n_variants": len(members),
@@ -820,7 +824,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             log(session, user, [q.code], "sua", f"đổi mã từ {code}" if q.code != code else None, before)
         if q.status != old_status:
             log(session, user, [q.code], "duyet" if q.status == Status.APPROVED else "bo-duyet")
-        return question_json(q)
+        return question_detail(session, q)
 
     @app.get("/api/questions/{code}/variant-params", dependencies=[STAFF])
     def variant_params(code: str, count: int = 5, session: Session = S):

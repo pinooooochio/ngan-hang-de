@@ -137,3 +137,19 @@ def test_bank_list_shows_sample_and_variants_skip_params(client):
     assert full["sample"]["choices"] and "{{" not in full["sample"]["solution"]
     plan = c.post("/api/gen/variants/plan", json={"codes": [q["code"]]}).json()
     assert not plan["sources"] and "câu tham số" in plan["skipped"][0]["reason"]
+
+
+def test_save_returns_group_fields(client):
+    """Trang soạn câu dùng ngay kết quả lưu: phải có đủ thông tin nhóm biến thể như khi tải câu."""
+    c = client
+    a = c.post("/api/questions", json={"source": DOT, "status": "approved"}).json()
+    other = DOT.replace("a = 1..6", "a = 2..7")
+    b = c.post("/api/questions", json={"source": other, "status": "approved"}).json()
+    m = c.post("/api/variant-groups/merge", json={"codes": [a["code"], b["code"]]})
+    assert m.status_code == 200, m.text
+    assert len(c.get(f"/api/questions/{b['code']}").json()["variants"]) == 2
+    r = c.put(f"/api/questions/{b['code']}", json={"source": other, "status": "approved"})
+    assert r.status_code == 200, r.text
+    saved = r.json()
+    assert [v["code"] for v in saved["variants"]] == [a["code"], b["code"]]
+    assert saved["variant_origin"] == a["code"]
