@@ -18,6 +18,16 @@ import { useAuth } from "../auth";
 import Tex from "../components/Tex";
 
 const PAGE = 20;
+/** Các câu đã tick được giữ khi đổi bộ lọc, tìm câu khác, hoặc mở một câu rồi quay lại. */
+const SELECTED_KEY = "nhd.bank.selected";
+
+function readSelected(): Set<string> {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(SELECTED_KEY) ?? "[]"));
+  } catch {
+    return new Set();
+  }
+}
 
 export default function BankPage() {
   const { me } = useAuth();
@@ -36,7 +46,23 @@ export default function BankPage() {
   const [total, setTotal] = useState(0);
   const [tags, setTags] = useState<TagNode[]>([]);
   const [bankTotal, setBankTotal] = useState(0);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(readSelected);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SELECTED_KEY, JSON.stringify([...selected]));
+    } catch {
+      /* không lưu được thì chỉ mất lựa chọn khi rời trang */
+    }
+  }, [selected]);
+  const addCodes = (codes: string[], on: boolean) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      for (const c of codes) {
+        if (on) n.add(c);
+        else n.delete(c);
+      }
+      return n;
+    });
   const [search, setSearch] = useState(filters.q);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -71,7 +97,7 @@ export default function BankPage() {
 
   const selectAll = async () => {
     try {
-      setSelected(new Set(await api.questionCodes(query)));
+      addCodes(await api.questionCodes(query), true);
     } catch (e) {
       setError(String((e as Error).message));
     }
@@ -101,8 +127,8 @@ export default function BankPage() {
 
   useEffect(() => {
     load();
-    setSelected(new Set());
   }, [load]);
+  useEffect(() => setSearch(filters.q), [filters.q]);
 
   // Đang lọc theo nhóm biến thể: tải mô tả dạng và câu gốc của nhóm
   useEffect(() => {
@@ -137,12 +163,14 @@ export default function BankPage() {
     }
   };
 
-  const toggle = (code: string) => {
-    const next = new Set(selected);
-    if (next.has(code)) next.delete(code);
-    else next.add(code);
-    setSelected(next);
+  const toggle = (code: string) => addCodes([code], !selected.has(code));
+  // Xem lại các câu đã tick (có thể nằm ở nhiều lần tìm khác nhau)
+  const showSelected = () => {
+    const next = new URLSearchParams();
+    next.set("tim", [...selected].join(", "));
+    setParams(next);
   };
+  const nOutside = [...selected].filter((c) => !items.some((q) => q.code === c)).length;
 
   const remove = async () => {
     if (!window.confirm(`Xoá ${selected.size} câu đã chọn? Không hoàn tác được. Câu đã nằm trong đề sẽ được giữ lại.`)) return;
@@ -196,7 +224,12 @@ export default function BankPage() {
               setFilter("tim", search.trim());
             }}
           >
-            <input placeholder="Tìm theo nội dung hoặc mã câu" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input
+              placeholder="Tìm theo nội dung hoặc mã câu; nhiều mã: Q00001, Q00005, Q00012"
+              title="Gõ nhiều mã câu cách nhau bằng dấu phẩy rồi Enter để hiện đúng các câu đó"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </form>
           <select value={filters.level} onChange={(e) => setFilter("muc", e.target.value)}>
             <option value="">Mọi mức độ</option>
@@ -228,7 +261,7 @@ export default function BankPage() {
           </div>
         )}
 
-        {selected.size > 0 && selected.size < total && items.every((q) => selected.has(q.code)) && total > items.length && (
+        {selected.size > 0 && selected.size < total && items.every((q) => selected.has(q.code)) && total > items.length && nOutside === 0 && (
           <div className="alert">
             Đã chọn {selected.size} câu trên trang này.{" "}
             <button className="link" onClick={selectAll}>
@@ -254,6 +287,8 @@ export default function BankPage() {
             onMerge={mergeSelected}
             onVariants={variantSelected}
             onClear={() => setSelected(new Set())}
+            onShow={showSelected}
+            nOutside={nOutside}
           />
         )}
 
@@ -263,13 +298,13 @@ export default function BankPage() {
               type="checkbox"
               title="Chọn tất cả câu trên trang này"
               checked={items.every((q) => selected.has(q.code))}
-              onChange={(e) => setSelected(e.target.checked ? new Set(items.map((q) => q.code)) : new Set())}
+              onChange={(e) => addCodes(items.map((q) => q.code), e.target.checked)}
             />
           )}{" "}
           {total} câu{filters.tag && <> trong thẻ <code>{filters.tag}</code></>}
           {items.length > 0 && (
             <span className="select-links">
-              <button className="link small" onClick={() => setSelected(new Set(items.map((q) => q.code)))}>
+              <button className="link small" onClick={() => addCodes(items.map((q) => q.code), true)}>
                 Chọn trang này
               </button>
               {total > items.length && (
@@ -390,9 +425,13 @@ function BulkBar({
   onMerge,
   onVariants,
   onClear,
+  onShow,
+  nOutside,
   admin,
 }: {
   admin: boolean;
+  onShow: () => void;
+  nOutside: number;
   onMerge: () => void;
   onVariants: (param?: boolean) => void;
   count: number;
@@ -405,6 +444,12 @@ function BulkBar({
   return (
     <div className="bulkbar">
       <b>Đã chọn {count} câu</b>
+      {nOutside > 0 && (
+        <span className="muted small">({nOutside} câu không nằm trong kết quả đang xem)</span>
+      )}
+      <button className="link small" onClick={onShow} title="Hiện đúng các câu đã chọn">
+        Xem các câu đã chọn
+      </button>
       <input list="bulk-tags" placeholder="Thẻ, ví dụ: Lớp 12 / Vectơ" value={tag} onChange={(e) => setTag(e.target.value)} />
       <datalist id="bulk-tags">
         {tags.map((t) => (

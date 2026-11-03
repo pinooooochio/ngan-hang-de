@@ -17,13 +17,13 @@ import {
 } from "../api";
 import { bankLink } from "../components/GenHistory";
 import { TagSelect } from "../components/TagTree";
-import Tex from "../components/Tex";
+import QuestionView from "../components/QuestionView";
 import { GenItems } from "./GeneratePage";
 
 /** Mã câu chọn ở ngân hàng, chuyển sang trang này qua sessionStorage (danh sách có thể dài). */
 export const PICKED_KEY = "nhd.variant.codes";
 
-type Scope = "topic" | "exam" | "picked";
+type Scope = "search" | "topic" | "exam" | "picked";
 
 function readPicked(): string[] {
   try {
@@ -38,7 +38,8 @@ function readPicked(): string[] {
 export default function BulkVariantPage() {
   const [params] = useSearchParams();
   const [picked] = useState(() => (params.get("chon") ? readPicked() : []));
-  const [scope, setScope] = useState<Scope>(picked.length ? "picked" : "topic");
+  const [scope, setScope] = useState<Scope>(picked.length ? "picked" : "search");
+  const [query, setQuery] = useState("");
   const [tags, setTags] = useState<TagNode[]>([]);
   const [exams, setExams] = useState<ExamSummary[]>([]);
   const [cur, setCur] = useState<Curriculum | null>(null);
@@ -84,7 +85,7 @@ export default function BulkVariantPage() {
     setSaved([]);
     setGroupId(null);
   };
-  useEffect(reset, [scope, tag, levels, types, examId, computational, conv]);
+  useEffect(reset, [scope, tag, examId, computational, conv]);
   useEffect(() => {
     setParts(null);
     setChecked(null);
@@ -112,14 +113,25 @@ export default function BulkVariantPage() {
         computational_only: computational || conv,
       };
       const body =
-        scope === "topic"
+        scope === "search"
+          ? { ...filter, q: query.trim() }
+          : scope === "topic"
           ? { ...filter, tag }
           : scope === "exam"
             ? { ...filter, exam_id: Number(examId) }
             : { ...filter, codes: picked };
       const r = await api.variantPlan(body);
-      setPlan(r);
-      setChosen(new Set(r.sources.map((q) => q.code)));
+      if (scope === "search" && plan) {
+        // tìm thêm: giữ các câu đã tick từ lần tìm trước, thêm câu mới vào cuối
+        const kept = plan.sources.filter((q) => chosen.has(q.code));
+        const keptCodes = new Set(kept.map((q) => q.code));
+        const merged = [...kept, ...r.sources.filter((q) => !keptCodes.has(q.code))];
+        setPlan({ ...r, sources: merged });
+        setChosen(new Set(merged.map((q) => q.code)));
+      } else {
+        setPlan(r);
+        setChosen(new Set(r.sources.map((q) => q.code)));
+      }
       setSaved([]);
       setGroupId(null);
     });
@@ -206,7 +218,9 @@ export default function BulkVariantPage() {
   };
   const canFind =
     !busy &&
-    (scope === "topic"
+    (scope === "search"
+      ? !!query.trim()
+      : scope === "topic"
       ? !!tag
       : scope === "exam"
         ? examId !== ""
@@ -261,6 +275,14 @@ export default function BulkVariantPage() {
           <label className="inline">
             <input
               type="radio"
+              checked={scope === "search"}
+              onChange={() => setScope("search")}
+            />{" "}
+            Tìm hoặc nhập mã câu
+          </label>
+          <label className="inline">
+            <input
+              type="radio"
               checked={scope === "topic"}
               onChange={() => setScope("topic")}
             />{" "}
@@ -292,6 +314,25 @@ export default function BulkVariantPage() {
           </label>
         </div>
         <div className="toolbar">
+          {scope === "search" && (
+            <form
+              className="variant-search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (canFind) findSources();
+              }}
+            >
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Nội dung, mã câu, hoặc nhiều mã: Q00001, Q00005, Q00012"
+              />
+              <span className="muted small">
+                Enter để tìm; tìm tiếp thì các câu đã tick vẫn được giữ.
+              </span>
+            </form>
+          )}
           {scope === "topic" && (
             <TagSelect
               tags={tags}
@@ -472,7 +513,12 @@ export default function BulkVariantPage() {
                         )}
                       </td>
                       <td className="variant-stem">
-                        <Tex source={q.sample?.stem ?? q.stem} />
+                        <QuestionView
+                          type={q.type}
+                          stem={q.sample?.stem ?? q.stem}
+                          choices={q.sample?.choices ?? q.choices}
+                          shortAnswer={q.sample ? q.sample.short_answer : q.short_answer}
+                        />
                       </td>
                     </tr>
                   ))}

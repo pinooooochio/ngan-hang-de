@@ -1623,3 +1623,17 @@ details.hint summary {
   color: #1a56c4;
   font-weight: 600;
 }
+.variant-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.variant-search input {
+  flex: 1;
+  min-width: 260px;
+}
+.variant-plan .variant-stem .question {
+  font-size: 14px;
+}
