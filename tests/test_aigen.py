@@ -565,3 +565,14 @@ def test_generate_new_param_questions(app):
     # prompt gộp nhiều ô: quy tắc câu tham số ghi một lần
     multi = c.post("/api/gen/prompt/multi", json={"rows": [p, {**p, "level": "TH"}]}).json()
     assert multi["combined"].count("# Câu tham số") == 1
+
+
+def test_search_by_many_codes(app):
+    c = app.state.client
+    r = c.get("/api/questions", params={"q": "12v-004, 12V-001; KHONG-CO"}).json()
+    assert sorted(x["code"] for x in r["items"]) == ["12V-001", "12V-004"]
+    plan = c.post("/api/gen/variants/plan", json={"q": "12V-004, 12V-001, KHONG-CO"}).json()
+    assert [s["code"] for s in plan["sources"]] == ["12V-004", "12V-001"]  # đúng thứ tự đã gõ
+    assert plan["sources"][0]["choices"]  # có cả phương án để xem
+    assert {"code": "KHONG-CO", "reason": "không có trong ngân hàng"} in plan["skipped"]
+    assert c.post("/api/gen/variants/plan", json={"q": "Tích vô hướng"}).json()["sources"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from sqlalchemy import Select, func, select
@@ -329,6 +330,19 @@ def _tag_filter(tag: str):
     )
 
 
+CODE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]*$")
+
+
+def code_list(text: str | None) -> list[str]:
+    """Ô tìm có dạng "Q00001, Q00005; 12V-004": trả về danh sách mã (rỗng nếu không phải dạng này)."""
+    if not text or not re.search(r"[,;\n]", text):
+        return []
+    parts = [p.strip() for p in re.split(r"[,;\n]+", text) if p.strip()]
+    if parts and all(CODE_TOKEN.match(p) for p in parts):
+        return list(dict.fromkeys(parts))
+    return []
+
+
 def question_query(
     tag: str | None = None,
     level: Level | None = None,
@@ -354,7 +368,11 @@ def question_query(
         # nhiều nguồn ngăn bởi "|" (ví dụ các lần sinh của một đợt: "AI #3|AI #4")
         sources = [s for s in source.split("|") if s]
         stmt = stmt.where(Question.source.in_(sources) if len(sources) > 1 else Question.source == source)
-    if text:
+    codes = code_list(text)
+    if codes:
+        # nhiều mã câu cách nhau bằng dấu phẩy / chấm phẩy / xuống dòng: tìm đúng các câu đó
+        stmt = stmt.where(func.upper(Question.code).in_([c.upper() for c in codes]))
+    elif text:
         like = f"%{text}%"
         stmt = stmt.where(
             Question.stem_latex.ilike(like) | Question.code.ilike(like) | Question.solution_latex.ilike(like)

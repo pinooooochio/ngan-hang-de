@@ -385,6 +385,7 @@ class VariantPlanIn(BaseModel):
     types: list[QuestionType] = []
     exam_id: int | None = None  # theo đề đã ghép
     codes: list[str] = Field([], max_length=2000)  # theo các câu đang chọn
+    q: str | None = None  # tìm như ở ngân hàng: nội dung, mã câu, hoặc nhiều mã cách nhau bằng dấu phẩy
     computational_only: bool = False
 
 
@@ -1486,6 +1487,10 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             qs = [it.question for it in sorted(exam.items, key=lambda it: (it.section, it.position))]
         elif body.codes:
             qs = [bank.get_question(session, c) for c in body.codes]
+        elif body.q and body.q.strip():
+            text = body.q.strip()
+            qs = list(session.scalars(bank.question_query(text=text, tag=body.tag or None)
+                                      .order_by(Question.id).limit(1000)))
         elif body.tag:
             qs = list(session.scalars(bank.question_query(tag=body.tag).order_by(Question.id)))
         else:
@@ -1495,6 +1500,12 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         if body.types:
             qs = [q for q in qs if q is not None and q.type in body.types]
         plan = aigen.plan_variants(session, qs, body.computational_only)
+        found = {q.code.upper() for q in qs if q is not None}
+        typed = bank.code_list(body.q) if body.q and not body.codes and body.exam_id is None else []
+        plan["skipped"] += [{"code": c, "reason": "không có trong ngân hàng"} for c in typed if c.upper() not in found]
+        if typed:  # nhập nhiều mã: giữ đúng thứ tự đã gõ
+            order = {c.upper(): i for i, c in enumerate(typed)}
+            plan["sources"].sort(key=lambda q: order.get(q.code.upper(), len(order)))
         sizes = {}
         for q in plan["sources"]:
             if q.variant_group and q.variant_group not in sizes:
@@ -1502,7 +1513,7 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         labels = {g.code: g.label for g in session.scalars(
             select(VariantGroup).where(VariantGroup.code.in_(list(sizes))))} if sizes else {}
         return {
-            "sources": [{**question_json(q, full=False), "n_variants": sizes.get(q.variant_group, 1),
+            "sources": [{**question_json(q), "n_variants": sizes.get(q.variant_group, 1),
                          "variant_label": labels.get(q.variant_group)} for q in plan["sources"]],
             "skipped": plan["skipped"],
             "max_sources": aigen.MAX_SOURCES, "max_per": aigen.MAX_PER, "pack": aigen.PACK,

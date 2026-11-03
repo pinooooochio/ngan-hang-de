@@ -333,7 +333,7 @@ export interface GenParams {
 }
 
 export interface VariantPlan {
-  sources: QuestionSummary[];
+  sources: Question[];
   skipped: { code: string; reason: string }[];
   max_sources: number;
   max_per: number;
@@ -665,6 +665,7 @@ export const api = {
     types?: QType[];
     exam_id?: number;
     codes?: string[];
+    q?: string;
     computational_only?: boolean;
   }) => request<VariantPlan>("POST", "/api/gen/variants/plan", body),
   variantPrompts: (body: VariantRun) =>
