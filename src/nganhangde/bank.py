@@ -588,3 +588,57 @@ def repair_split_tags(session: Session, dry_run: bool = False) -> list[dict]:
             prune_tags(session, path)
         session.commit()
     return changes
+
+
+def tag_tree_full(session: Session, order: dict[str, int] | None = None,
+                  skeleton: list[list[str]] | None = None) -> list[dict]:
+    """Cây thẻ dạng danh sách {path, name, names, depth, count} theo thứ tự cây. Các đường dẫn tên trong
+    `skeleton` (khung chương trình: lớp, chương, chủ đề, dạng) luôn có mặt, kể cả khi chưa có câu nào.
+    Số câu tính một lần cho cả cây (không truy vấn từng nút)."""
+    order = order or {}
+    nodes: dict[str, dict] = {}
+    by_id: dict[int, TaxonomyNode] = {n.id: n for n in session.scalars(select(TaxonomyNode))}
+
+    def names_of(n: TaxonomyNode) -> list[str]:
+        out = []
+        cur: TaxonomyNode | None = n
+        while cur is not None:
+            out.append(cur.name)
+            cur = by_id.get(cur.parent_id) if cur.parent_id else None
+        return out[::-1]
+
+    def add(path: str, names: list[str]) -> None:
+        if path in nodes:
+            return
+        parent = path.rsplit("/", 1)[0] if "/" in path else None
+        if parent is not None:
+            add(parent, names[:-1])
+        nodes[path] = {"path": path, "name": names[-1], "names": names, "parent": parent, "qs": set()}
+
+    for n in by_id.values():
+        add(n.path, names_of(n))
+    for names in skeleton or []:
+        names = [x for x in names if x]
+        if names:
+            add("/".join(slugify(x) for x in names), names)
+    for path, qid in session.execute(
+            select(TaxonomyNode.path, QuestionTag.question_id).join(QuestionTag, QuestionTag.node_id == TaxonomyNode.id)):
+        p: str | None = path
+        while p is not None and p in nodes:
+            nodes[p]["qs"].add(qid)
+            p = nodes[p]["parent"]
+
+    children: dict[str | None, list[dict]] = {}
+    for node in sorted(nodes.values(), key=lambda x: (order.get(x["path"], len(order)), x["name"])):
+        children.setdefault(node["parent"], []).append(node)
+    out: list[dict] = []
+
+    def visit(node: dict, depth: int) -> None:
+        out.append({"path": node["path"], "name": node["name"], "names": node["names"], "depth": depth,
+                    "count": len(node["qs"])})
+        for child in children.get(node["path"], []):
+            visit(child, depth + 1)
+
+    for root in children.get(None, []):
+        visit(root, 0)
+    return out

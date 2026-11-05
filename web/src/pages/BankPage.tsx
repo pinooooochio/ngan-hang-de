@@ -111,7 +111,7 @@ export default function BankPage() {
           limit: PAGE,
           offset: filters.page * PAGE,
         }),
-        api.tags(),
+        api.tags(true),
         api.stats(),
       ]);
       setItems(list.items);

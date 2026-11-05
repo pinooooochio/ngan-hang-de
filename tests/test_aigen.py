@@ -651,3 +651,12 @@ def test_editing_keeps_comma_topic_as_one_tag(app):
     saved = c.put(f"/api/questions/{q['code']}", json={"source": src, "status": "approved"}).json()
     assert [t["names"] for t in saved["tags"]] == [["Đại số", "Chương 3. Không gian vectơ",
                                                      "Độc lập tuyến tính, cơ sở và số chiều", "Hạng của hệ vectơ"]]
+
+
+def test_bank_tree_shows_whole_curriculum(app):
+    c = app.state.client
+    full = c.get("/api/tags", params={"khung": 1}).json()
+    gt2 = [t for t in full if t["names"][0] == "Giải tích 2"]
+    assert gt2 and gt2[0]["depth"] == 0 and gt2[0]["count"] == 0 and len(gt2) > 10
+    assert next(t for t in full if t["path"] == "lop-12")["count"] == 15
+    assert all(t["count"] > 0 for t in c.get("/api/tags").json())  # mặc định chỉ thẻ có câu

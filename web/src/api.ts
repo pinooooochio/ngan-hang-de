@@ -576,7 +576,8 @@ export const api = {
     request<{ updated: number }>("POST", "/api/questions/bulk", body),
   template: () => request<{ source: string }>("GET", "/api/template"),
   parse: (source: string) => request<Parsed[]>("POST", "/api/parse", { source }),
-  tags: () => request<TagNode[]>("GET", "/api/tags"),
+  /** `khung`: hiện đủ khung chương trình, cả các chủ đề chưa có câu. */
+  tags: (khung = false) => request<TagNode[]>("GET", `/api/tags${khung ? "?khung=1" : ""}`),
   stats: () => request<{ total: number; by_level: Record<string, number>; by_status: Record<string, number> }>("GET", "/api/stats"),
   importPreview: (source: string) => request<ImportPreviewItem[]>("POST", "/api/import/preview", { source }),
   importCommit: (body: {

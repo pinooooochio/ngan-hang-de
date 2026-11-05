@@ -117,6 +117,20 @@ def curriculum_order() -> dict[str, int]:
     return {p: i for i, p in enumerate(dict.fromkeys(paths))}
 
 
+def curriculum_skeleton() -> list[list[str]]:
+    """Mọi đường dẫn tên trong khung chương trình (lớp, chương, chủ đề, dạng), để cây thẻ hiện đủ khung."""
+    out: list[list[str]] = []
+    for g in load_curriculum():
+        out.append([g["ten"]])
+        out += [[g["ten"], c["ten"]] for c in g["chuong"]]
+        for t in g["chu_de"]:
+            if t.get("label"):
+                continue
+            out.append(list(t["names"]))
+            out += [[*t["names"], d] for d in t["dang"]]
+    return out
+
+
 def load_tag_moves() -> list[dict]:
     """Quy tắc chuyển thẻ từ khung cũ ([[doi_the]] tu, den), quy tắc cụ thể hơn đứng trước."""
     with open(curriculum_path(), "rb") as f:
