@@ -565,22 +565,26 @@ def _merge_split(paths: list[list[str]]) -> list[list[str]]:
     return paths
 
 
-def repair_split_tags(session: Session) -> int:
-    """Sửa thẻ của các câu import trước đây bị tách đôi ở dấu phẩy trong tên chủ đề. Trả về số câu đã sửa."""
+def repair_split_tags(session: Session, dry_run: bool = False) -> list[dict]:
+    """Sửa thẻ của các câu import trước đây bị tách đôi ở dấu phẩy trong tên chủ đề. Trả về các thay đổi
+    {"code", "before", "after"} (đường dẫn tên " / "); `dry_run` thì chỉ liệt kê, không sửa."""
     multi = select(QuestionTag.question_id).group_by(QuestionTag.question_id).having(func.count() > 1)
-    fixed = 0
+    changes: list[dict] = []
     old_paths: set[str] = set()
-    for q in session.scalars(select(Question).where(Question.id.in_(multi))):
+    for q in session.scalars(select(Question).where(Question.id.in_(multi)).order_by(Question.id)):
         before = [tag_names(t) for t in q.tags]
         after = _merge_split(before)
         if after == before:
             continue
+        changes.append({"code": q.code, "before": [" / ".join(p) for p in before],
+                        "after": [" / ".join(p) for p in after]})
+        if dry_run:
+            continue
         old_paths.update(t.path for t in q.tags)
         q.tags = list({id(n): n for n in (get_or_create_path(session, p) for p in after)}.values())
-        fixed += 1
-    if fixed:
+    if changes and not dry_run:
         session.flush()
         for path in old_paths:
             prune_tags(session, path)
         session.commit()
-    return fixed
+    return changes

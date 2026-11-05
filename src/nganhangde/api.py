@@ -994,6 +994,23 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             moved += bank.move_tag(session, r["from"], split_tag(r["to"]) or [])
         return {"moved": moved}
 
+    def split_summary(changes: list[dict]) -> list[dict]:
+        rows: dict[tuple, dict] = {}
+        for c in changes:
+            key = (tuple(c["before"]), tuple(c["after"]))
+            r = rows.setdefault(key, {"before": c["before"], "after": c["after"], "codes": []})
+            r["codes"].append(c["code"])
+        return sorted(rows.values(), key=lambda r: -len(r["codes"]))
+
+    @app.get("/api/tags/split", dependencies=[ADMIN])
+    def split_tags_preview(session: Session = S):
+        """Câu có thẻ bị tách nhầm ở dấu phẩy trong tên chủ đề (import bằng bản cũ) và thẻ sau khi ghép lại."""
+        return split_summary(bank.repair_split_tags(session, dry_run=True))
+
+    @app.post("/api/tags/split/repair", dependencies=[ADMIN])
+    def split_tags_repair(session: Session = S):
+        return {"fixed": len(bank.repair_split_tags(session))}
+
     @app.get("/api/stats", dependencies=[STAFF])
     def stats(session: Session = S):
         by_level = dict(session.execute(select(Question.level, func.count()).group_by(Question.level)).all())
