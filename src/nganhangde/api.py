@@ -965,11 +965,10 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         return [parsed_json(pq, report=len(pqs) == 1) for pq in pqs]
 
     @app.get("/api/tags", dependencies=[U])
-    def tags(session: Session = S):
-        return [
-            {"path": n.path, "name": n.name, "depth": d, "count": c, "names": bank.tag_names(n)}
-            for n, d, c in bank.tag_tree(session, aigen.curriculum_order())
-        ]
+    def tags(khung: bool = False, session: Session = S):
+        """Cây thẻ. `khung=1`: hiện đủ khung chương trình (cả chương, chủ đề, dạng chưa có câu nào)."""
+        return bank.tag_tree_full(session, aigen.curriculum_order(),
+                                  aigen.curriculum_skeleton() if khung else None)
 
     @app.post("/api/tags/move", dependencies=[ADMIN])
     def move_tag(body: MoveTagIn, session: Session = S):
