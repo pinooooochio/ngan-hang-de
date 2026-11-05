@@ -618,11 +618,22 @@ def test_repair_split_tags(app):
         q.tags = [bank.get_or_create_path(s, ["Đại số", "Chương 3. Không gian vectơ", "Độc lập tuyến tính"]),
                   bank.get_or_create_path(s, ["cơ sở và số chiều", "Hạng của hệ vectơ"])]
         s.commit()
-        assert bank.repair_split_tags(s) == 1
+        code = q.code
+    c = app.state.client
+    rows = c.get("/api/tags/split").json()
+    assert rows == [{"before": ["Đại số / Chương 3. Không gian vectơ / Độc lập tuyến tính",
+                                "cơ sở và số chiều / Hạng của hệ vectơ"],
+                     "after": ["Đại số / Chương 3. Không gian vectơ / Độc lập tuyến tính, cơ sở và số chiều / "
+                               "Hạng của hệ vectơ"], "codes": [code]}]
+    with Session(app.state.engine) as s:
+        assert len(bank.repair_split_tags(s)) == 1
+        q = bank.get_question(s, rows[0]["codes"][0])
         assert [bank.tag_names(t) for t in q.tags] == [["Đại số", "Chương 3. Không gian vectơ",
                                                          "Độc lập tuyến tính, cơ sở và số chiều", "Hạng của hệ vectơ"]]
         assert bank.get_question(s, "12V-001") is not None  # câu khác không bị đụng
-        assert bank.repair_split_tags(s) == 0
+        assert bank.repair_split_tags(s) == []
+    assert c.get("/api/tags/split").json() == []
+    assert not any(t["names"][0] == "cơ sở và số chiều" for t in c.get("/api/tags").json())
 
 
 def test_html_entities_from_web_copy():
@@ -630,3 +641,13 @@ def test_html_entities_from_web_copy():
 
     q = parse_text(ALG.replace(r"\{(1;2;3)", r"\{(1;2;3)&amp;").replace("tỉ lệ", "p&#39; tỉ lệ"))[0]
     assert "&amp;" not in q.stem and "(1;2;3)&" in q.stem and "p' tỉ lệ" in q.solution
+
+
+def test_editing_keeps_comma_topic_as_one_tag(app):
+    """Lưu lại câu ở trang soạn (mã nguồn có dòng @tags sinh lại) không tách thẻ có dấu phẩy."""
+    c = app.state.client
+    q = c.post("/api/questions", json={"source": ALG.split("\n\n% @tags")[0], "status": "draft"}).json()
+    src = c.get(f"/api/questions/{q['code']}").json()["ex_source"]
+    saved = c.put(f"/api/questions/{q['code']}", json={"source": src, "status": "approved"}).json()
+    assert [t["names"] for t in saved["tags"]] == [["Đại số", "Chương 3. Không gian vectơ",
+                                                     "Độc lập tuyến tính, cơ sở và số chiều", "Hạng của hệ vectơ"]]

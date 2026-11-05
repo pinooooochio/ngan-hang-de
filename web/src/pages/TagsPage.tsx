@@ -7,6 +7,7 @@ import { TagSelect } from "../components/TagTree";
 export default function TagsPage() {
   const [tags, setTags] = useState<TagNode[]>([]);
   const [moves, setMoves] = useState<TagMove[]>([]);
+  const [splits, setSplits] = useState<{ before: string[]; after: string[]; codes: string[] }[]>([]);
   const [cur, setCur] = useState<Curriculum | null>(null);
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
@@ -17,6 +18,7 @@ export default function TagsPage() {
   const load = () => {
     api.tags().then(setTags);
     api.tagMoves().then(setMoves);
+    api.splitTags().then(setSplits);
   };
   useEffect(() => {
     load();
@@ -60,6 +62,51 @@ export default function TagsPage() {
       </p>
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert ok">{message}</div>}
+
+      {splits.length > 0 && (
+        <section className="section-card">
+          <h3>Thẻ bị tách nhầm ở dấu phẩy ({splits.reduce((n, r) => n + r.codes.length, 0)} câu)</h3>
+          <p className="hint">
+            Bản cũ coi dấu phẩy trong tên chủ đề (ví dụ "Độc lập tuyến tính, cơ sở và số chiều") là chỗ ngăn hai thẻ, nên câu
+            import bị gắn hai thẻ sai. Bấm "Ghép lại" để đưa các câu về đúng thẻ bên phải; nhánh thẻ thừa tự xoá.
+          </p>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Thẻ hiện tại</th>
+                <th>Sau khi ghép</th>
+                <th>Số câu</th>
+              </tr>
+            </thead>
+            <tbody>
+              {splits.map((r) => (
+                <tr key={r.before.join("|")}>
+                  <td className="small">
+                    {r.before.map((b) => (
+                      <div key={b}>{b}</div>
+                    ))}
+                  </td>
+                  <td className="small">
+                    {r.after.map((a) => (
+                      <div key={a}>{a}</div>
+                    ))}
+                  </td>
+                  <td>
+                    <Link to={`/?tim=${encodeURIComponent(r.codes.join(", "))}`}>{r.codes.length}</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => run(async () => `Đã ghép lại thẻ của ${(await api.repairSplitTags()).fixed} câu.`)}
+          >
+            Ghép lại
+          </button>
+        </section>
+      )}
 
       <section className="section-card">
         <h3>Chuyển từ khung đại học cũ</h3>
