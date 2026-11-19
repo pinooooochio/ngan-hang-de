@@ -71,7 +71,7 @@ export default function ExamNewPage() {
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
-    api.tags().then(setTags);
+    api.tags(true).then(setTags);
     api.listTemplates().then((list) => {
       setTemplates(list);
       const k = Number(searchParams.get("khung"));

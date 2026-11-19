@@ -88,11 +88,12 @@ ten = "Lớp 11"
   [[lop.chu_de]]
   ten = "Góc trong không gian"
   ghi_chu = "hình học không gian thuần tuý, chưa dùng tọa độ"
-  dang = ["Góc giữa hai đường thẳng", "Góc giữa đường thẳng và mặt phẳng", "Góc giữa hai mặt phẳng"]
+  dang = ["Góc giữa hai đường thẳng", "Góc giữa đường thẳng và mặt phẳng", "Góc giữa hai mặt phẳng", "Góc nhị diện"]
   noi_dung = '''
 - Góc giữa hai đường thẳng: bằng góc giữa hai đường thẳng cùng đi qua một điểm và lần lượt song song với chúng; nằm trong [0°; 90°].
 - Góc giữa đường thẳng d và mặt phẳng (P): góc giữa d và hình chiếu vuông góc d' của d trên (P); d ⊥ (P) thì góc bằng 90°.
-- Góc giữa hai mặt phẳng: góc giữa hai đường thẳng lần lượt vuông góc với hai mặt phẳng, hoặc dựng qua giao tuyến hai đường thẳng cùng vuông góc với giao tuyến; góc nhị diện, số đo góc nhị diện.
+- Góc giữa hai mặt phẳng: góc giữa hai đường thẳng lần lượt vuông góc với hai mặt phẳng, hoặc dựng qua giao tuyến hai đường thẳng cùng vuông góc với giao tuyến; nằm trong [0°; 90°].
+- Góc nhị diện [P, d, Q]: hai nửa mặt phẳng chung bờ d; góc phẳng nhị diện là góc tạo bởi hai tia cùng vuông góc với cạnh d tại một điểm, lần lượt nằm trên hai mặt; số đo góc nhị diện nằm trong [0°; 180°] (khác góc giữa hai mặt phẳng, có thể tù). Dạng thường gặp: xác định và tính số đo góc nhị diện [S, BC, A] của hình chóp (góc giữa mặt bên và đáy), góc nhị diện giữa hai mặt bên, góc nhị diện trong hình lập phương, hình hộp, lăng trụ đứng; dùng định lí ba đường vuông góc để dựng góc phẳng nhị diện.
 - Hình thường dùng: hình chóp có cạnh bên vuông góc với đáy, hình chóp đều, hình lăng trụ đứng, hình hộp chữ nhật, hình lập phương.
 '''
 
