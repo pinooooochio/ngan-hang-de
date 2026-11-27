@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
   api,
@@ -69,7 +70,9 @@ let nextKey = 1;
 
 export default function GeneratePage() {
   const [cur, setCur] = useState<Curriculum | null>(null);
-  const [grade, setGrade] = useState("Lớp 12");
+  // mở từ trang "Theo chủ đề": ?lop=<tên lớp>&chude=<tên chủ đề>
+  const [search] = useSearchParams();
+  const [grade, setGrade] = useState(search.get("lop") || "Lớp 12");
   const [topics, setTopics] = useState<CoverageTopic[]>([]);
   const [target, setTarget] = useState(readTarget);
   const [rows, setRows] = useState<Row[]>([]);
@@ -82,7 +85,7 @@ export default function GeneratePage() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<GenBatch[] | null>(null);
   const [copied, setCopied] = useState(false);
-  const [focusTopic, setFocusTopic] = useState<string>();
+  const [focusTopic, setFocusTopic] = useState<string | undefined>(search.get("chude") || undefined);
   const [defaultCount, setDefaultCount] = useState(readCount);
   const [picker, setPicker] = useState(false);
   // dán tay nhiều phần: các phần đã lưu chung một mã đợt
@@ -97,6 +100,14 @@ export default function GeneratePage() {
   useEffect(() => {
     api.genCoverage(grade).then((r) => setTopics(r.topics));
   }, [grade]);
+
+  // chủ đề được chọn từ trang "Theo chủ đề": cuộn tới dòng của nó trong bảng
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    if (scrolled || !focusTopic || !topics.length) return;
+    setScrolled(true);
+    document.getElementById(`cov-${focusTopic}`)?.scrollIntoView({ block: "center" });
+  }, [topics, focusTopic, scrolled]);
 
   // Còn lần sinh đang chạy thì hỏi lại sau 3 giây
   const running = batches.some((b) => b.status === "pending" || b.status === "running");
@@ -315,7 +326,7 @@ export default function GeneratePage() {
                 <td colSpan={LEVELS.length + 1}>{t.chuong}</td>
               </tr>
             )}
-            <tr>
+            <tr id={`cov-${t.name}`} className={t.in_curriculum && t.name === focusTopic ? "cov-focus" : ""}>
               <td className={t.chuong ? "cov-indent" : ""}>
                 {t.label ?? t.name}
                 {!t.in_curriculum && !t.label && <span className="muted small"> (ngoài khung chương trình)</span>}

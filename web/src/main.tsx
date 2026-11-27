@@ -14,6 +14,7 @@ import AccountPage from "./pages/AccountPage";
 import AttemptPage from "./pages/AttemptPage";
 import BackupPage from "./pages/BackupPage";
 import BankPage from "./pages/BankPage";
+import OverviewPage from "./pages/OverviewPage";
 import EditorPage from "./pages/EditorPage";
 import ExamDetailPage from "./pages/ExamDetailPage";
 import ExamListPage from "./pages/ExamListPage";
@@ -49,6 +50,8 @@ function Guarded() {
     <ErrorBoundary resetKey={pathname}>
       <Routes>
         <Route path="/" element={<BankPage />} />
+        <Route path="/chu-de" element={<OverviewPage />} />
+        <Route path="/chu-de/:slug" element={<OverviewPage />} />
         <Route path="/cau/moi" element={<EditorPage />} />
         <Route path="/cau/:code" element={<EditorPage />} />
         <Route path="/import" element={<ImportPage />} />

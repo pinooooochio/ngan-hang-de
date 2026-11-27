@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import aigen, chuyende, params, theory, theorygen, auth, backup, bank, builds, figures, generator, practice, render
+from . import aigen, chuyende, overview, params, theory, theorygen, auth, backup, bank, builds, figures, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url, upgrade_schema
 from .models import (
@@ -1111,6 +1111,11 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     @app.post("/api/tags/split/repair", dependencies=[ADMIN])
     def split_tags_repair(session: Session = S):
         return {"fixed": len(bank.repair_split_tags(session))}
+
+    @app.get("/api/overview", dependencies=[STAFF])
+    def bank_overview(session: Session = S):
+        """Ngân hàng theo chủ đề: số câu theo mức độ, câu nháp, lý thuyết, chuyên đề của từng chủ đề / dạng bài."""
+        return overview.overview(session)
 
     @app.get("/api/stats", dependencies=[STAFF])
     def stats(session: Session = S):

@@ -1805,3 +1805,281 @@ details.hint summary {
   display: inline-block;
   margin-top: 6px;
 }
+
+/* Ngân hàng theo chủ đề (/chu-de) */
+.ov {
+  --nb: #8fb3e8;
+  --th: #4f86d6;
+  --vd: #e0a23a;
+  --vdc: #c8553d;
+  --track: #eef0f4;
+}
+.pill {
+  display: inline-block;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--track, #eef0f4);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pill + .pill {
+  margin-left: 4px;
+}
+.pill.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.pill.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.pill.acc {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+a.pill:hover {
+  text-decoration: underline;
+}
+.chip {
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.ov-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 10px 0;
+  font-variant-numeric: tabular-nums;
+}
+.ov-totals div {
+  display: flex;
+  flex-direction: column;
+}
+.ov-totals b {
+  font-size: 20px;
+}
+.ov-totals span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.ov-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ov-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.ov-group {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 24px 0 10px;
+  font-weight: 600;
+}
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 14px;
+}
+.ov-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ov-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(31, 95, 191, 0.08);
+}
+.ov-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ov-card-top b {
+  font-size: 17px;
+}
+.ov-big {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.ov-big b {
+  font-size: 26px;
+  line-height: 1;
+}
+.ov-meter {
+  display: grid;
+  grid-template-columns: 82px 1fr 52px;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+}
+.ov-meter > span:first-child {
+  color: var(--muted);
+}
+.ov-meter > span:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ov-track {
+  height: 7px;
+  background: var(--track);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+.ov-track i {
+  display: block;
+  height: 100%;
+}
+.ov .fill-q {
+  background: var(--accent);
+}
+.ov .fill-t {
+  background: var(--ok);
+}
+.ov .lv-NB {
+  background: var(--nb);
+}
+.ov .lv-TH {
+  background: var(--th);
+}
+.ov .lv-VD {
+  background: var(--vd);
+}
+.ov .lv-VDC {
+  background: var(--vdc);
+}
+.ov-card-foot {
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.ov-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 14px 0 10px;
+  align-items: center;
+}
+.ov-filters input {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex: 1 1 180px;
+  max-width: 300px;
+  min-width: 0;
+}
+.ov-table-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.ov-table {
+  min-width: 860px;
+  font-variant-numeric: tabular-nums;
+}
+.ov-table th,
+.ov-table td {
+  padding: 8px 12px;
+  vertical-align: middle;
+}
+.ov-table thead th {
+  white-space: nowrap;
+  background: var(--bg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ov-chap td {
+  background: var(--bg);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ov-topic {
+  cursor: pointer;
+}
+.ov-topic:hover td {
+  background: var(--accent-soft);
+}
+.ov-caret {
+  display: inline-block;
+  width: 16px;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.ov-topic.open .ov-caret {
+  transform: rotate(90deg);
+}
+.ov-sub {
+  margin-left: 16px;
+}
+.ov-lv {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 190px;
+}
+.ov-nums {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ov-nums b {
+  color: var(--text);
+  font-weight: 600;
+}
+.ov-acts {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ov-dang td {
+  font-size: 13px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.ov-dang td:first-child {
+  padding-left: 40px;
+  color: var(--muted);
+}
+.ov-zero {
+  color: var(--bad);
+  font-weight: 600;
+}
+.cov-focus td {
+  background: var(--accent-soft);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-card,
+  .ov-caret {
+    transition: none;
+  }
+}
