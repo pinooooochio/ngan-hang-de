@@ -224,3 +224,102 @@ def test_theory_gen(app, monkeypatch):
     assert ed.get("/api/gen/batches").json() == []  # không lẫn vào danh sách sinh câu hỏi
     one = ed.get(f"/api/theory/gen/{listed['batches'][0]['id']}").json()
     assert "Vectơ" in one["output"] and "Lớp 10 / Vectơ" in one["user_prompt"]
+
+
+QS = r"""% @tags: Lớp 11 / Góc trong không gian / Góc nhị diện ; @level: NB
+\begin{ex}
+Số đo góc nhị diện thuộc đoạn nào?
+\choice{\True $[0^\circ;180^\circ]$}{$[0^\circ;90^\circ]$}{$(0^\circ;90^\circ)$}{$[0^\circ;360^\circ)$}
+\loigiai{Theo định nghĩa.}
+\end{ex}
+% @tags: Lớp 11 / Góc trong không gian / Góc nhị diện ; @level: NB
+\begin{ex}
+Cho hình lập phương $ABCD.A'B'C'D'$. Số đo góc nhị diện $[B, AA', D]$ bằng bao nhiêu độ?
+\shortans{90}
+\loigiai{$\widehat{BAD}=90^\circ$.}
+\end{ex}
+% @tags: Lớp 11 / Góc trong không gian ; @level: VD
+\begin{ex}
+Tính góc giữa hai mặt phẳng $(SBC)$ và $(ABC)$.
+\loigiai{Lời giải tự luận.}
+\end{ex}
+"""
+
+
+def test_topic_doc(app):
+    from sqlalchemy.orm import Session
+
+    from nganhangde import chuyende
+    from nganhangde.compile import latex_available
+
+    admin = TestClient(app)
+    login_admin(admin)
+    codes = admin.post("/api/import/commit", json={"source": QS, "status": "approved"}).json()["added"]
+    lesson = LESSON + f"\n\\cauhoi{{{codes[1]}}}\n"
+    assert admin.put("/api/theory/topic", json={"path": PATH, "source": lesson, "approve": True}).status_code == 200
+    ed = user(admin, app, "ban-soan", "editor")
+    hv = user(admin, app, "hoc-vien", "student")
+
+    cfg = {"title": "Chuyên đề góc", "parts": [{"path": PATH, "general": True, "dang": ["Góc nhị diện", "Góc giữa hai mặt phẳng"]}],
+           "levels": {"NB": 2}, "mixed": {"VD": 1}}
+    av = ed.post("/api/topic-docs/availability", json=cfg).json()[0]
+    assert av["general_theory"] == 1 and av["dang"][-1] == {"dang": "Góc nhị diện", "theory": 3,
+                                                            "questions": {"NB": 2, "TH": 0, "VD": 0, "VDC": 0}}
+    assert hv.post("/api/topic-docs", json=cfg).status_code == 403
+    r = ed.post("/api/topic-docs", json=cfg)
+    assert r.status_code == 201, r.text
+    doc = r.json()
+    t = doc["outline"][0]
+    # câu đã làm ví dụ không lặp lại ở bài tập; dạng không có gì thì bỏ
+    assert [d["name"] for d in t["dang"]] == ["Góc nhị diện"]
+    assert [q["code"] for q in t["dang"][0]["exercises"]] == [codes[0]] and t["mixed"] == [codes[2]]
+    assert any("Góc nhị diện" in n and "NB 1/2" in n for n in doc["notes"])
+    assert doc["status"] == "pending" and doc["count"] == 2
+
+    with Session(app.state.engine) as s:
+        row = s.get(chuyende.TopicDoc, doc["id"])
+        assert "\\dangbai{Dạng 1. Góc nhị diện}" in row.tex and "\\begin{vidu}[Hình chóp đều]" in row.tex
+        assert "\\causo{1}" in row.tex and "Đáp án và lời giải" in row.tex and "& TL" in row.tex
+        if latex_available():
+            assert chuyende.run_pending(s) == 1
+            s.refresh(row)
+            assert row.status.value == "done", row.error
+    if latex_available():
+        pdf = ed.get(f"/api/topic-docs/{doc['id']}/chuyen-de.pdf")
+        assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+    z = ed.get(f"/api/topic-docs/{doc['id']}/chuyen-de.tex")
+    assert z.status_code == 200 and z.content.startswith(b"PK")
+    assert [d["id"] for d in ed.get("/api/topic-docs").json()] == [doc["id"]]
+
+    # chọn lại câu: vẫn đúng cấu hình; xoá chỉ admin
+    again = ed.post(f"/api/topic-docs/{doc['id']}/refresh?reselect=true").json()
+    assert again["status"] == "pending" and again["config"]["parts"] == doc["config"]["parts"]
+    assert ed.delete(f"/api/topic-docs/{doc['id']}").status_code == 403
+    assert admin.delete(f"/api/topic-docs/{doc['id']}").status_code == 204
+    assert ed.get("/api/topic-docs").json() == []
+    assert ed.post("/api/topic-docs", json={"parts": []}).status_code == 422
+
+
+def test_question_links(app):
+    from sqlalchemy.orm import Session
+
+    admin = TestClient(app)
+    login_admin(admin)
+    codes = admin.post("/api/import/commit", json={"source": QS, "status": "approved"}).json()["added"]
+    with Session(app.state.engine) as s:
+        assert theory.question_links(s, codes) == {}
+    admin.put("/api/theory/topic", json={"path": PATH, "source": LESSON, "approve": True})
+    with Session(app.state.engine) as s:
+        links = theory.question_links(s, codes + ["KHONG-CO"])
+    assert links[codes[0]] == {"path": PATH, "ten": "Góc trong không gian", "dang": "Góc nhị diện"}
+    assert links[codes[2]]["dang"] is None and "KHONG-CO" not in links
+
+    # xem lại bài luyện: có liên kết lý thuyết
+    hv = user(admin, app, "hoc-vien", "student")
+    admin.put("/api/settings", json={"student_quick": True})
+    a = hv.post("/api/attempts", json={"quick": {"tag": PATH, "mcq": 1, "tf": 0, "short": 0, "essay": 0}})
+    assert a.status_code == 201, a.text
+    aid = a.json()["id"]
+    assert "theory_links" not in hv.get(f"/api/attempts/{aid}").json()
+    hv.post(f"/api/attempts/{aid}/submit")
+    assert hv.get(f"/api/attempts/{aid}").json()["theory_links"][codes[0]]["dang"] == "Góc nhị diện"

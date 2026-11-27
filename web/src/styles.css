@@ -1758,3 +1758,50 @@ details.hint summary {
   border-radius: 8px;
   padding: 8px 12px;
 }
+.level-counts {
+  display: inline-flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.level-counts input {
+  width: 52px;
+}
+.topic-doc-part > label {
+  display: block;
+  margin: 4px 0;
+}
+.topic-doc-dang {
+  width: 100%;
+  border-collapse: collapse;
+}
+.topic-doc-dang td {
+  padding: 3px 6px;
+  border-top: 1px solid var(--border);
+}
+.topic-doc-new label.grow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.topic-doc-new input.grow {
+  flex: 1;
+}
+.topic-doc-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 1.4fr;
+  gap: 16px;
+  align-items: start;
+}
+.topic-doc-grid .pdf-frame iframe {
+  height: calc(100vh - 220px);
+}
+@media (max-width: 900px) {
+  .topic-doc-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.theory-link {
+  display: inline-block;
+  margin-top: 6px;
+}

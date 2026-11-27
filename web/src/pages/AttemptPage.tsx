@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, levelLabel, type Answer, type AttemptDetail, type AttemptQuestion, type AttemptResult } from "../api";
+import { api, levelLabel, theoryLink, type Answer, type AttemptDetail, type AttemptQuestion, type AttemptResult } from "../api";
 import Tex from "../components/Tex";
 import { isStaff, useAuth } from "../auth";
 
@@ -310,6 +310,12 @@ function Review({ attempt }: { attempt: AttemptDetail }) {
                       </Link>
                     </div>
                     <ReviewQuestion q={q} value={attempt.answers[key]} />
+                    {attempt.theory_links?.[q.code] && (
+                      <Link className="small theory-link" to={theoryLink(attempt.theory_links[q.code].path, attempt.theory_links[q.code].dang)}>
+                        Xem lý thuyết: {attempt.theory_links[q.code].ten}
+                        {attempt.theory_links[q.code].dang && <> › {attempt.theory_links[q.code].dang}</>}
+                      </Link>
+                    )}
                   </div>
                 );
               })}

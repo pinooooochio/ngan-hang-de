@@ -422,3 +422,33 @@ def missing_refs(session: Session, blocks) -> set[str]:
         return set()
     have = set(session.scalars(select(Question.code).where(Question.code.in_(refs))))
     return refs - have
+
+
+def question_links(session: Session, codes) -> dict[str, dict]:
+    """Câu hỏi -> chủ đề (và dạng bài) có lý thuyết đã duyệt, theo thẻ của câu; để "Xem lý thuyết" khi xem lại
+    bài làm. Câu không có chủ đề nào có lý thuyết thì không có trong kết quả."""
+    from .models import QuestionTag, TaxonomyNode
+
+    codes = set(codes)
+    if not codes:
+        return {}
+    approved: dict[str, set] = {}
+    for path, dang in session.execute(select(TheoryBlock.topic_path, TheoryBlock.dang)
+                                      .where(TheoryBlock.status == Status.APPROVED).distinct()):
+        approved.setdefault(path, set()).add(dang)
+    if not approved:
+        return {}
+    by_path = {t["path"]: t for t in topics() if t["path"] in approved}
+    out: dict[str, dict] = {}
+    rows = session.execute(select(Question.code, TaxonomyNode.path)
+                           .join(QuestionTag, QuestionTag.question_id == Question.id)
+                           .join(TaxonomyNode, TaxonomyNode.id == QuestionTag.node_id)
+                           .where(Question.code.in_(codes)))
+    for code, tag in rows:
+        for path, t in by_path.items():
+            if tag == path or tag.startswith(path + "/"):
+                rest = tag[len(path) + 1:].split("/")[0] if tag != path else ""
+                dang = next((d for d in t["dang"] if slugify(d) == rest and d in approved[path]), None)
+                if code not in out or (dang and not out[code]["dang"]):
+                    out[code] = {"path": path, "ten": t["ten"], "dang": dang}
+    return out

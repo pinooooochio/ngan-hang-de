@@ -34,6 +34,8 @@ import TagsPage from "./pages/TagsPage";
 import TheoryHomePage from "./pages/TheoryHomePage";
 import TheoryImportPage from "./pages/TheoryImportPage";
 import TheoryTopicPage from "./pages/TheoryTopicPage";
+import TopicDocNewPage from "./pages/TopicDocNewPage";
+import TopicDocPage, { TopicDocListPage } from "./pages/TopicDocPage";
 import UsersPage from "./pages/UsersPage";
 import "./styles.css";
 
@@ -61,6 +63,9 @@ function Guarded() {
         <Route path="/ly-thuyet" element={<TheoryHomePage />} />
         <Route path="/ly-thuyet/import" element={<TheoryImportPage />} />
         <Route path="/ly-thuyet/cd/*" element={<TheoryTopicPage />} />
+        <Route path="/chuyen-de" element={<TopicDocListPage />} />
+        <Route path="/chuyen-de/moi" element={<TopicDocNewPage />} />
+        <Route path="/chuyen-de/:id" element={<TopicDocPage />} />
         <Route path="/luyen" element={<PracticeHomePage />} />
         <Route path="/luyen/ket-qua" element={<PracticeResultsPage />} />
         <Route path="/luyen/:id" element={<AttemptPage />} />

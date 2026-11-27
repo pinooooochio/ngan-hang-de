@@ -419,6 +419,27 @@ class TheoryLog(Base):
     at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
 
 
+class TopicDoc(Base):
+    """Chuyên đề: lý thuyết đã duyệt và bài tập tự luyện chọn từ ngân hàng theo chủ đề / dạng bài, đáp án và
+    lời giải ở cuối quyển. `config` là lựa chọn của người soạn, `data` là nội dung lúc tạo (không đổi khi câu
+    hay lý thuyết được sửa sau đó, trừ khi bấm cập nhật). Một file PDF, biên dịch nền như đề thi."""
+
+    __tablename__ = "topic_docs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(300))
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    username: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    status: Mapped[BuildStatus] = mapped_column(Enum(BuildStatus), default=BuildStatus.PENDING, index=True)
+    tex: Mapped[str] = mapped_column(Text, default="")
+    pdf_path: Mapped[str | None] = mapped_column(String(500))
+    error: Mapped[str | None] = mapped_column(Text)
+    error_question: Mapped[str | None] = mapped_column(String(64))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class Setting(Base):
     """Cài đặt chung dạng khoá -> giá trị JSON."""
 

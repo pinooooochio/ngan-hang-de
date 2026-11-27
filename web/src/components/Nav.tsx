@@ -50,6 +50,7 @@ export const MODULES: Module[] = [
     roles: ALL,
     pages: [
       { to: "/ly-thuyet", label: "Theo chủ đề", match: (p) => p === "/ly-thuyet" || p.startsWith("/ly-thuyet/cd/") },
+      { to: "/chuyen-de", label: "Chuyên đề", match: under("/chuyen-de"), roles: STAFF },
       { to: "/ly-thuyet/import", label: "Import", roles: STAFF },
     ],
   },

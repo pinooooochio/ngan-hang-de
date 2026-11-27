@@ -46,6 +46,9 @@ TABLE_NAMES = {
     "question_logs": "Nhật ký sửa câu",
     "answer_requests": "Yêu cầu tải đáp án",
     "settings": "Cài đặt",
+    "theory_blocks": "Khối lý thuyết",
+    "theory_logs": "Nhật ký sửa lý thuyết",
+    "topic_docs": "Chuyên đề",
 }
 
 # Phiên đăng nhập không sao lưu: khôi phục xong mọi người đăng nhập lại
