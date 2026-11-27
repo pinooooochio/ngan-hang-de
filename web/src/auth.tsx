@@ -19,7 +19,7 @@ export function useAuth(): AuthState {
 export const isStaff = (role: Role) => role === "admin" || role === "editor";
 
 /** Trang đầu tiên sau khi đăng nhập theo vai trò. */
-export const homeOf = (role: Role) => (role === "student" ? "/luyen" : "/");
+export const homeOf = (role: Role) => (role === "student" ? "/luyen" : "/chu-de");
 
 interface Props {
   /** Hiện khi chưa đăng nhập; `setup` = chưa có tài khoản nào, cần tạo admin đầu tiên. */

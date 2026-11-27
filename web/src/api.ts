@@ -701,6 +701,49 @@ export class ApiError extends Error {
   }
 }
 
+/** Số câu của một chủ đề / dạng bài / lớp: đã duyệt (theo mức độ) và nháp. */
+export interface OverviewCount {
+  approved: number;
+  draft: number;
+  levels: Record<Level, number>;
+}
+
+export interface OverviewTheory {
+  approved: number;
+  draft: number;
+}
+
+export interface OverviewDang extends OverviewCount {
+  name: string;
+  theory: OverviewTheory;
+}
+
+export interface OverviewTopic extends OverviewCount {
+  path: string;
+  ten: string;
+  chuong: string;
+  theory: OverviewTheory;
+  docs: number;
+  dang: OverviewDang[];
+}
+
+export interface OverviewGrade extends OverviewCount {
+  ten: string;
+  slug: string;
+  bac: string;
+  ghi_chu: string;
+  docs: number;
+  topics: OverviewTopic[];
+}
+
+export interface Overview {
+  grades: OverviewGrade[];
+  levels: Level[];
+  total: { approved: number; draft: number };
+  /** Số câu không thuộc lớp / học phần nào của khung chương trình. */
+  other: number;
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   // File (ví dụ bản sao lưu .zip) gửi nguyên nội dung, còn lại gửi JSON
   const raw = body instanceof Blob;
@@ -876,6 +919,7 @@ export const api = {
         )
       : request<BackupSummary & { safety_backup: string | null; relogin: boolean }>("POST", "/api/backup/restore", src),
   deleteAttempt: (id: number) => request<void>("DELETE", `/api/attempts/${id}`),
+  overview: () => request<Overview>("GET", "/api/overview"),
   theoryTopics: () =>
     request<{
       grades: { ten: string; slug: string; bac: string; topics: TheoryTopicSummary[] }[];

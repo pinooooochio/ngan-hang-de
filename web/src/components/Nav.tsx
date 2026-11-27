@@ -33,9 +33,10 @@ export const MODULES: Module[] = [
   {
     key: "bank",
     label: "Ngân hàng câu hỏi",
-    to: "/",
+    to: "/chu-de",
     roles: STAFF,
     pages: [
+      { to: "/chu-de", label: "Theo chủ đề", match: under("/chu-de") },
       { to: "/", label: "Danh sách câu", match: (p) => p === "/" || (p.startsWith("/cau/") && p !== "/cau/moi") },
       { to: "/cau/moi", label: "Soạn câu mới" },
       { to: "/import", label: "Import" },
