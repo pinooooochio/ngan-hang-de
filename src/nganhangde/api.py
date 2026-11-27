@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import aigen, params, auth, backup, bank, builds, figures, generator, practice, render
+from . import aigen, params, theory, auth, backup, bank, builds, figures, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url, upgrade_schema
 from .models import (
@@ -45,6 +45,7 @@ from .models import (
     Role,
     Setting,
     Status,
+    TheoryLog,
     User,
 )
 from .parser import ParsedQuestion, parse_text
@@ -493,6 +494,30 @@ class VaryIn(BaseModel):
     vary: bool
 
 
+class TheoryParseIn(BaseModel):
+    source: str
+    path: str | None = None  # chủ đề mặc định (trang soạn theo chủ đề, hoặc chọn khi import)
+
+
+class TheorySaveIn(BaseModel):
+    path: str
+    source: str
+    approve: bool = False
+
+
+class TheoryImportIn(BaseModel):
+    source: str
+    path: str | None = None
+    filename: str | None = None
+    mode: str = Field("append", pattern="^(append|replace)$")
+    approve: bool = False
+    only: list[str] | None = None  # chỉ import các chủ đề này (đường dẫn)
+
+
+class TheoryPathIn(BaseModel):
+    path: str
+
+
 class DecisionIn(BaseModel):
     status: str = Field(pattern="^(approved|rejected)$")
     note: str | None = None
@@ -540,6 +565,61 @@ def parse_one(source: str) -> ParsedQuestion:
     if len(parsed) != 1:
         raise HTTPException(422, f"cần đúng một khối \\begin{{ex}}...\\end{{ex}}, tìm thấy {len(parsed)}")
     return parsed[0]
+
+
+# ---------- Lý thuyết ----------
+
+
+def theory_block_json(b, refs: dict[str, dict] | None = None) -> dict:
+    """Một khối lý thuyết (đã lưu: TheoryBlock, hoặc vừa đọc: theory.ParsedBlock)."""
+    saved = not isinstance(b, theory.ParsedBlock)
+    ref = b.ref_code if saved else b.ref
+    data = {"kind": b.kind, "kind_name": theory.KINDS.get(b.kind, b.kind), "title": b.title, "content": b.content,
+            "dang": b.dang, "ref": ref, "question": (refs or {}).get(ref) if ref else None}
+    if saved:
+        data.update(code=b.code, status=b.status.value, source=b.source, updated_by=b.updated_by,
+                    updated_at=b.updated_at.isoformat(timespec="seconds") if b.updated_at else None)
+    else:
+        data["line"] = b.line
+    return data
+
+
+def theory_refs(session: Session, blocks, approved_only: bool) -> dict[str, dict]:
+    """Câu hỏi được dẫn làm ví dụ: mã -> dữ liệu để hiển thị (học viên chỉ thấy câu đã duyệt)."""
+    codes = {(b.ref if isinstance(b, theory.ParsedBlock) else b.ref_code) for b in blocks}
+    codes.discard(None)
+    if not codes:
+        return {}
+    q = select(Question).where(Question.code.in_(codes))
+    if approved_only:
+        q = q.where(Question.status == Status.APPROVED)
+    out = {}
+    for row in session.scalars(q):
+        data = question_json(row)
+        out[row.code] = {k: data.get(k) for k in ("code", "type", "level", "status", "stem", "choices",
+                                                     "short_answer", "solution", "sample")}
+    return out
+
+
+def theory_topic_json(t: dict) -> dict:
+    return {"path": t["path"], "ten": t["ten"], "names": t["names"], "grade": t["grade"], "chuong": t["chuong"],
+            "dang": t["dang"], "noi_dung": t["noi_dung"]}
+
+
+def theory_parsed_json(session: Session, parsed: theory.ParsedTheory) -> dict:
+    blocks = [b for sec in parsed.sections for b in sec.blocks]
+    refs = theory_refs(session, blocks, approved_only=False)
+    warnings = list(parsed.warnings)
+    for sec in parsed.sections:
+        for b in sec.blocks:
+            if b.ref and b.ref not in refs:
+                warnings.append((b.line, f"không có câu {b.ref} trong ngân hàng"))
+    return {
+        "errors": [{"line": ln, "message": m} for ln, m in parsed.errors],
+        "warnings": [{"line": ln, "message": m} for ln, m in sorted(warnings)],
+        "sections": [{"topic": theory_topic_json(sec.topic), "line": sec.line,
+                      "blocks": [theory_block_json(b, refs) for b in sec.blocks]} for sec in parsed.sections],
+    }
 
 
 # ---------- Ứng dụng ----------
@@ -1437,6 +1517,113 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
         # admin xoá được mọi lượt, Soạn đề chỉ lượt của mình, học viên không xoá
         session.delete(load_attempt(session, attempt_id, user, write=user.role != Role.ADMIN))
         session.commit()
+
+    # ---------- Lý thuyết ----------
+
+    def theory_topic(path: str) -> dict:
+        t = theory.find_topic(path)
+        if t is None:
+            raise HTTPException(404, f"không có chủ đề {path} trong khung chương trình")
+        return t
+
+    @app.get("/api/theory/topics")
+    def theory_topics(user: User = U, session: Session = S):
+        """Khung chương trình theo lớp, mỗi chủ đề kèm số khối lý thuyết đã duyệt / nháp."""
+        student = user.role == Role.STUDENT
+        counts = theory.counts(session)
+        grades = []
+        for g in aigen.load_curriculum():
+            items = []
+            for t in g["chu_de"]:
+                if t.get("label"):
+                    continue
+                c = counts.get(t["path"], {"approved": 0, "draft": 0})
+                if student and not c["approved"]:
+                    continue
+                items.append({"path": t["path"], "ten": t["ten"], "chuong": t["chuong"], "n_dang": len(t["dang"]),
+                              "approved": c["approved"], "draft": 0 if student else c["draft"]})
+            if items:
+                grades.append({"ten": g["ten"], "slug": g["slug"], "bac": g["bac"], "topics": items})
+        return {"grades": grades, "kinds": theory.KINDS}
+
+    @app.get("/api/theory/topic")
+    def theory_get(path: str, user: User = U, session: Session = S):
+        t = theory_topic(path)
+        student = user.role == Role.STUDENT
+        blocks = theory.topic_blocks(session, t["path"], approved_only=student)
+        refs = theory_refs(session, blocks, approved_only=student)
+        data = {"topic": theory_topic_json(t), "kinds": theory.KINDS,
+                "blocks": [theory_block_json(b, refs) for b in blocks if not (student and b.ref_code
+                                                                              and b.ref_code not in refs)]}
+        if not student:
+            data["source"] = theory.to_source(blocks)
+            logs = session.scalars(select(TheoryLog).where(TheoryLog.topic_path == t["path"])
+                                   .order_by(TheoryLog.id.desc()).limit(30))
+            data["logs"] = [{"id": lg.id, "username": lg.username, "action": lg.action, "detail": lg.detail,
+                             "at": lg.at.isoformat(timespec="seconds"), "has_before": bool(lg.before)} for lg in logs]
+        return data
+
+    @app.get("/api/theory/logs/{log_id}", dependencies=[STAFF])
+    def theory_log(log_id: int, session: Session = S):
+        lg = session.get(TheoryLog, log_id)
+        if lg is None:
+            raise HTTPException(404, "không có bản ghi này")
+        return {"id": lg.id, "path": lg.topic_path, "before": lg.before or ""}
+
+    @app.post("/api/theory/parse", dependencies=[STAFF])
+    def theory_parse(body: TheoryParseIn, session: Session = S):
+        default = theory_topic(body.path) if body.path else None
+        return theory_parsed_json(session, theory.parse(body.source, default))
+
+    @app.put("/api/theory/topic")
+    def theory_save(body: TheorySaveIn, user: User = STAFF, session: Session = S):
+        if body.approve and user.role != Role.ADMIN:
+            raise HTTPException(403, "chỉ admin được duyệt lý thuyết")
+        t = theory_topic(body.path)
+        parsed = theory.parse(body.source, t)
+        if parsed.errors:
+            ln, msg = parsed.errors[0]
+            raise HTTPException(422, f"dòng {ln}: {msg}")
+        other = [sec for sec in parsed.sections if sec.topic["path"] != t["path"]]
+        if other:
+            raise HTTPException(422, f"trang này chỉ soạn chủ đề {t['ten']}; bỏ dòng % @chude: "
+                                     f"{' / '.join(other[0].topic['names'])} hoặc dùng trang Import")
+        blocks = parsed.sections[0].blocks if parsed.sections else []
+        result = theory.save_topic(session, t, blocks, approve=body.approve, username=user.username)
+        return {**result, **theory_get(t["path"], user, session)}
+
+    @app.post("/api/theory/topic/approve", dependencies=[ADMIN])
+    def theory_approve(body: TheoryPathIn, user: User = U, session: Session = S):
+        t = theory_topic(body.path)
+        return {"approved": theory.approve_topic(session, t["path"], user.username)}
+
+    @app.post("/api/theory/import/preview", dependencies=[STAFF])
+    def theory_import_preview(body: TheoryParseIn, session: Session = S):
+        default = theory_topic(body.path) if body.path else None
+        data = theory_parsed_json(session, theory.parse(body.source, default))
+        counts = theory.counts(session)
+        for sec in data["sections"]:
+            c = counts.get(sec["topic"]["path"], {"approved": 0, "draft": 0})
+            sec["existing"] = c["approved"] + c["draft"]
+        return data
+
+    @app.post("/api/theory/import/commit")
+    def theory_import_commit(body: TheoryImportIn, user: User = STAFF, session: Session = S):
+        if body.approve and user.role != Role.ADMIN:
+            raise HTTPException(403, "chỉ admin được duyệt lý thuyết")
+        default = theory_topic(body.path) if body.path else None
+        parsed = theory.parse(body.source, default)
+        if parsed.errors:
+            ln, msg = parsed.errors[0]
+            raise HTTPException(422, f"dòng {ln}: {msg}")
+        topics = []
+        for sec in parsed.sections:
+            if body.only is not None and sec.topic["path"] not in body.only:
+                continue
+            r = theory.save_topic(session, sec.topic, sec.blocks, approve=body.approve, username=user.username,
+                                  source=body.filename or "import", append=body.mode == "append", action="import")
+            topics.append({"path": sec.topic["path"], "ten": sec.topic["ten"], **r})
+        return {"topics": topics}
 
     # ---------- Sinh câu hỏi bằng AI ----------
 

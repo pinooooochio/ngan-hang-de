@@ -66,6 +66,11 @@ function textToHtml(s: string): string {
   t = t.replace(/\\begin\{enumerate\}(\[[^\]]*\])?/g, "<ol>").replace(/\\end\{enumerate\}/g, "</ol>");
   t = t.replace(/\\begin\{itemize\}(\[[^\]]*\])?/g, "<ul>").replace(/\\end\{itemize\}/g, "</ul>");
   t = t.replace(/\\item(?![A-Za-z])\s*/g, "<li>");
+  t = replaceCommand(t, "loigiai", 1, ([a]) => `<div class="tex-loigiai"><b><i>Lời giải.</i></b> ${a}</div>`);
+  t = t.replace(/\\begin\{loigiai\}/g, '<div class="tex-loigiai"><b><i>Lời giải.</i></b> ').replace(/\\end\{loigiai\}/g, "</div>");
+  t = replaceCommand(t, "section\\*?", 1, ([a]) => `<h4 class="tex-h">${a}</h4>`);
+  t = replaceCommand(t, "subsection\\*?", 1, ([a]) => `<h5 class="tex-h">${a}</h5>`);
+  t = replaceCommand(t, "subsubsection\\*?", 1, ([a]) => `<h5 class="tex-h">${a}</h5>`);
   t = t.replace(/\\begin\{center\}/g, '<div class="tex-center">').replace(/\\end\{center\}/g, "</div>");
   t = t.replace(/\\\\/g, "<br>");
   t = t.replace(/\n\s*\n/g, "<br><br>");

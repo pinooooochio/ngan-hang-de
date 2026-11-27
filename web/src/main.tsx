@@ -31,6 +31,9 @@ import PracticeHomePage, {
 import RequestsPage from "./pages/RequestsPage";
 import SettingsPage from "./pages/SettingsPage";
 import TagsPage from "./pages/TagsPage";
+import TheoryHomePage from "./pages/TheoryHomePage";
+import TheoryImportPage from "./pages/TheoryImportPage";
+import TheoryTopicPage from "./pages/TheoryTopicPage";
 import UsersPage from "./pages/UsersPage";
 import "./styles.css";
 
@@ -55,6 +58,9 @@ function Guarded() {
         <Route path="/sinh/:id" element={<GenBatchPage />} />
         <Route path="/sinh/bien-the" element={<BulkVariantPage />} />
         <Route path="/sinh/bien-the/:code" element={<VariantPage />} />
+        <Route path="/ly-thuyet" element={<TheoryHomePage />} />
+        <Route path="/ly-thuyet/import" element={<TheoryImportPage />} />
+        <Route path="/ly-thuyet/cd/*" element={<TheoryTopicPage />} />
         <Route path="/luyen" element={<PracticeHomePage />} />
         <Route path="/luyen/ket-qua" element={<PracticeResultsPage />} />
         <Route path="/luyen/:id" element={<AttemptPage />} />

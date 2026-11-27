@@ -509,6 +509,95 @@ export interface AnswerRequestRow {
 }
 
 /** Lỗi từ máy chủ, giữ mã HTTP để phân biệt chưa đăng nhập (401) hay không có quyền (403). */
+// ---------- Lý thuyết ----------
+
+export type TheoryKind = "dinhnghia" | "dinhly" | "congthuc" | "phuongphap" | "vidu" | "luuy" | "doan";
+
+export interface TheoryQuestion {
+  code: string;
+  type: QType;
+  level: Level | null;
+  status: Status;
+  stem: string;
+  choices: ChoiceData[];
+  short_answer: string | null;
+  solution: string;
+  sample?: ParamInstance | null;
+}
+
+export interface TheoryBlock {
+  kind: TheoryKind;
+  kind_name: string;
+  title: string | null;
+  content: string;
+  dang: string | null;
+  /** Ví dụ lấy từ câu hỏi trong ngân hàng (\cauhoi{mã}). */
+  ref: string | null;
+  question: TheoryQuestion | null;
+  /** Khối đã lưu. */
+  code?: string;
+  status?: Status;
+  source?: string | null;
+  updated_by?: string | null;
+  updated_at?: string | null;
+  /** Khối vừa đọc từ bài soạn: dòng bắt đầu. */
+  line?: number;
+}
+
+export interface TheoryTopicInfo {
+  path: string;
+  ten: string;
+  names: string[];
+  grade: string;
+  chuong: string;
+  dang: string[];
+  noi_dung: string;
+}
+
+export interface TheoryTopicSummary {
+  path: string;
+  ten: string;
+  chuong: string;
+  n_dang: number;
+  approved: number;
+  draft: number;
+}
+
+export interface TheoryLogEntry {
+  id: number;
+  username: string | null;
+  action: string;
+  detail: string | null;
+  at: string;
+  has_before: boolean;
+}
+
+export interface TheoryTopic {
+  topic: TheoryTopicInfo;
+  kinds: Record<TheoryKind, string>;
+  blocks: TheoryBlock[];
+  /** Chỉ Admin / Soạn đề. */
+  source?: string;
+  logs?: TheoryLogEntry[];
+}
+
+export interface TheoryMessage {
+  line: number;
+  message: string;
+}
+
+export interface TheoryParsed {
+  errors: TheoryMessage[];
+  warnings: TheoryMessage[];
+  sections: { topic: TheoryTopicInfo; line: number; blocks: TheoryBlock[]; existing?: number }[];
+}
+
+export interface TheorySaveResult {
+  added: number;
+  kept: number;
+  removed: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -694,4 +783,25 @@ export const api = {
         )
       : request<BackupSummary & { safety_backup: string | null; relogin: boolean }>("POST", "/api/backup/restore", src),
   deleteAttempt: (id: number) => request<void>("DELETE", `/api/attempts/${id}`),
+  theoryTopics: () =>
+    request<{
+      grades: { ten: string; slug: string; bac: string; topics: TheoryTopicSummary[] }[];
+      kinds: Record<TheoryKind, string>;
+    }>("GET", "/api/theory/topics"),
+  theoryTopic: (path: string) => request<TheoryTopic>("GET", `/api/theory/topic?path=${encodeURIComponent(path)}`),
+  theoryParse: (source: string, path?: string) => request<TheoryParsed>("POST", "/api/theory/parse", { source, path }),
+  theorySave: (path: string, source: string, approve = false) =>
+    request<TheoryTopic & TheorySaveResult>("PUT", "/api/theory/topic", { path, source, approve }),
+  theoryApprove: (path: string) => request<{ approved: number }>("POST", "/api/theory/topic/approve", { path }),
+  theoryLog: (id: number) => request<{ id: number; path: string; before: string }>("GET", `/api/theory/logs/${id}`),
+  theoryImportPreview: (source: string, path?: string) =>
+    request<TheoryParsed>("POST", "/api/theory/import/preview", { source, path }),
+  theoryImportCommit: (body: {
+    source: string;
+    path?: string;
+    filename?: string;
+    mode: "append" | "replace";
+    approve: boolean;
+    only?: string[];
+  }) => request<{ topics: ({ path: string; ten: string } & TheorySaveResult)[] }>("POST", "/api/theory/import/commit", body),
 };

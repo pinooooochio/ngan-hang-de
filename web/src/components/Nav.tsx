@@ -44,6 +44,16 @@ export const MODULES: Module[] = [
     ],
   },
   {
+    key: "theory",
+    label: "Lý thuyết",
+    to: "/ly-thuyet",
+    roles: ALL,
+    pages: [
+      { to: "/ly-thuyet", label: "Theo chủ đề", match: (p) => p === "/ly-thuyet" || p.startsWith("/ly-thuyet/cd/") },
+      { to: "/ly-thuyet/import", label: "Import", roles: STAFF },
+    ],
+  },
+  {
     key: "exams",
     label: "Đề thi",
     to: "/de",
