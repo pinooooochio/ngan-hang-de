@@ -1165,7 +1165,12 @@ def run_batch(session: Session, batch: GenerationBatch) -> None:
     try:
         text, usage = CALLER(batch.system_prompt, batch.user_prompt, batch.model or model_name())
         batch.usage = usage
-        import_batch(session, batch, text)
+        if batch.kind == "theory":
+            from . import theorygen
+
+            theorygen.import_batch(session, batch, text)
+        else:
+            import_batch(session, batch, text)
         if usage.get("stop_reason") == "max_tokens":
             batch.error = "kết quả bị cắt vì quá dài, câu cuối có thể thiếu; nên giảm số câu mỗi lần"
             session.commit()

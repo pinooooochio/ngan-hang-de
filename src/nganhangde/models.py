@@ -309,6 +309,7 @@ class GenerationBatch(Base):
     user_id: Mapped[int | None] = mapped_column(Integer)
     username: Mapped[str | None] = mapped_column(String(100))
     group_id: Mapped[str | None] = mapped_column(String(32), index=True)  # mã đợt khi sinh nhiều ô một lần
+    kind: Mapped[str | None] = mapped_column(String(20))  # "theory": Claude soạn lý thuyết; trống: sinh câu hỏi
 
     @property
     def source(self) -> str:

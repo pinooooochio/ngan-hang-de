@@ -166,3 +166,61 @@ def test_theory_api(app):
                    json={"source": FOREIGN, "mode": "replace", "approve": True}).json()
     assert [(t["kept"], t["removed"]) for t in r["topics"]] == [(4, 4), (0, 0)]
     assert len(hv.get(f"/api/theory/topic?path={PATH}").json()["blocks"]) == 3  # câu không có trong ngân hàng bị ẩn
+
+
+def test_theory_gen(app, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from nganhangde import aigen
+
+    admin = TestClient(app)
+    login_admin(admin)
+    ed = user(admin, app, "ban-soan", "editor")
+    # chủ đề đã có kiến thức chung và dạng Góc nhị diện
+    assert admin.put("/api/theory/topic", json={"path": PATH, "source": LESSON, "approve": True}).status_code == 200
+
+    # prompt: chỉ phần còn thiếu, kèm lý thuyết đã có để không viết lại
+    p = ed.post("/api/theory/gen/prompt", json={"paths": [PATH], "examples": 1, "note": "Ví dụ hình lập phương"}).json()
+    assert p["params"]["general"] is False and "Góc nhị diện" not in p["params"]["dang"]
+    assert "   - Góc giữa hai đường thẳng" in p["user"] and "Hình chóp đều" in p["user"]
+    assert "1 ví dụ có lời giải" in p["user"] and "hình lập phương" in p["user"]
+    assert "\\begin{phuongphap}" in p["combined"]
+
+    # dán kết quả (cách chép prompt): khối vào nháp, đứng đúng nhóm dạng bài
+    output = "```latex\n\\begin{congthuc}[Thêm]\n$x$\n\\end{congthuc}\n% @dang: Góc giữa hai đường thẳng\n" \
+             "\\begin{phuongphap}\nDời về cùng một điểm.\n\\end{phuongphap}\n```"
+    r = ed.post("/api/theory/gen", json={"paths": [PATH], "mode": "manual", "output": output})
+    assert r.status_code == 201, r.text
+    b = r.json()[0]
+    assert b["status"] == "done" and b["added"] == 2 and b["source"].startswith("AI #")
+    blocks = admin.get(f"/api/theory/topic?path={PATH}").json()["blocks"]
+    assert [(x["kind"], x["status"]) for x in blocks][:2] == [("dinhnghia", "approved"), ("congthuc", "draft")]
+    assert blocks[2]["dang"] == "Góc giữa hai đường thẳng" and blocks[-1]["dang"] == "Góc nhị diện"
+    assert admin.get(f"/api/theory/topic?path={PATH}").json()["logs"][0]["action"] == "ai"
+
+    # kết quả sai định dạng: lần soạn lỗi, không đụng lý thuyết
+    r = ed.post("/api/theory/gen", json={"paths": [PATH], "mode": "manual", "output": "% @dang: Sai\n\\begin{luuy}x"})
+    assert r.json()[0]["status"] == "failed" and "không có dạng" in r.json()[0]["error"]
+
+    # qua API: nhiều chủ đề một đợt, chủ đề đã đủ bị bỏ qua; worker gọi Claude
+    seen = []
+
+    def fake(system, user_prompt, model):
+        seen.append(user_prompt)
+        return "\\begin{dinhnghia}[Vectơ]\nĐoạn thẳng có hướng.\n\\end{dinhnghia}", {"input_tokens": 1,
+                                                                                    "output_tokens": 1}
+
+    monkeypatch.setattr(aigen, "CALLER", fake)
+    full = {"paths": [PATH], "all_parts": True, "mode": "api"}
+    assert len(ed.post("/api/theory/gen", json=full).json()) == 1
+    r = ed.post("/api/theory/gen", json={"paths": ["lop-10/vecto", "lop-10/menh-de-va-tap-hop"], "mode": "api"})
+    assert r.status_code == 201 and [x["status"] for x in r.json()] == ["pending", "pending"]
+    with Session(app.state.engine) as s:
+        assert aigen.run_pending(s) == 3
+    assert any("Lý thuyết đã có" in u for u in seen)
+    listed = ed.get("/api/theory/gen?path=lop-10/vecto").json()
+    assert listed["batches"][0]["status"] == "done" and listed["batches"][0]["added"] == 1
+    assert len(ed.get("/api/theory/gen").json()["batches"]) == 5
+    assert ed.get("/api/gen/batches").json() == []  # không lẫn vào danh sách sinh câu hỏi
+    one = ed.get(f"/api/theory/gen/{listed['batches'][0]['id']}").json()
+    assert "Vectơ" in one["output"] and "Lớp 10 / Vectơ" in one["user_prompt"]

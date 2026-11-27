@@ -375,6 +375,10 @@ def save_topic(session: Session, topic: dict, blocks: list[ParsedBlock], *, appr
     removed = [b for lst in pool.values() for b in lst]
     for b in removed:
         session.delete(b)
+    if append:
+        # thêm vào sau: khối mới đứng cuối nhóm cùng dạng bài (kiến thức chung trước, các dạng theo khung)
+        order = {None: -1, **{d: i for i, d in enumerate(topic["dang"])}}
+        rows.sort(key=lambda r: order.get(r.dang or None, len(order)))
     for i, row in enumerate(rows):
         row.position = i
         if approve:
