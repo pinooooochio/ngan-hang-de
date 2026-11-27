@@ -1728,3 +1728,33 @@ details.hint summary {
 .tex-h {
   margin: 10px 0 4px;
 }
+.theory-gen {
+  margin-bottom: 14px;
+}
+.theory-gen-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 10px;
+}
+.theory-gen-manual textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.theory-gen .grow {
+  flex: 1;
+  min-width: 200px;
+}
+.error-text {
+  color: var(--bad);
+}
+.theory-home .sticky-bar {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 5;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}

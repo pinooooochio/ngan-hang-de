@@ -598,6 +598,34 @@ export interface TheorySaveResult {
   removed: number;
 }
 
+export interface TheoryGenBatch {
+  id: number;
+  mode: "api" | "manual";
+  status: BuildState;
+  params: { path: string; general: boolean; dang: string[]; examples: number; note: string };
+  model: string | null;
+  source: string;
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+  username: string | null;
+  group_id: string | null;
+  topic: string;
+  added: number;
+  kinds: Record<string, number>;
+}
+
+export interface TheoryGenIn {
+  paths: string[];
+  general?: boolean;
+  dang?: string[];
+  all_parts?: boolean;
+  examples?: number;
+  note?: string;
+  mode: "api" | "manual";
+  output?: string;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -804,4 +832,13 @@ export const api = {
     approve: boolean;
     only?: string[];
   }) => request<{ topics: ({ path: string; ten: string } & TheorySaveResult)[] }>("POST", "/api/theory/import/commit", body),
+  theoryGenPrompt: (body: Omit<TheoryGenIn, "mode">) =>
+    request<{ params: TheoryGenBatch["params"]; combined: string }>("POST", "/api/theory/gen/prompt", { ...body, mode: "manual" }),
+  theoryGen: (body: TheoryGenIn) => request<TheoryGenBatch[]>("POST", "/api/theory/gen", body),
+  theoryGenList: (path?: string) =>
+    request<{ api: boolean; model: string; batches: TheoryGenBatch[] }>(
+      "GET",
+      `/api/theory/gen${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
+  theoryGenRetry: (id: number) => request<unknown>("POST", `/api/gen/batches/${id}/retry`),
 };

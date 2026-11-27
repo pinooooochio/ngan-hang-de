@@ -6,6 +6,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, type TheoryKind, type TheoryParsed, type TheoryTopic } from "../api";
 import { useAuth } from "../auth";
 import TheoryBlocks from "../components/TheoryBlocks";
+import TheoryGenPanel, { TheoryGenList } from "../components/TheoryGenPanel";
 
 const SNIPPETS: { kind: TheoryKind | "dang" | "cauhoi"; label: string; text: string }[] = [
   { kind: "dinhnghia", label: "Định nghĩa", text: "\\begin{dinhnghia}[Tên khái niệm]\n\n\\end{dinhnghia}\n" },
@@ -30,7 +31,7 @@ function starter(t: TheoryTopic["topic"]): string {
   return lines.join("\n") + "\n";
 }
 
-const ACTION = { sua: "Sửa", duyet: "Duyệt", import: "Import" } as Record<string, string>;
+const ACTION = { sua: "Sửa", duyet: "Duyệt", import: "Import", ai: "Claude soạn" } as Record<string, string>;
 
 export default function TheoryTopicPage() {
   const path = useParams()["*"] ?? "";
@@ -44,6 +45,8 @@ export default function TheoryTopicPage() {
   const [source, setSource] = useState("");
   const [parsed, setParsed] = useState<TheoryParsed | null>(null);
   const [busy, setBusy] = useState(false);
+  const [gen, setGen] = useState(false);
+  const [genRefresh, setGenRefresh] = useState(0);
   const view = useRef<EditorView | null>(null);
   const extensions = useMemo(() => [StreamLanguage.define(stex), EditorView.lineWrapping], []);
 
@@ -59,6 +62,7 @@ export default function TheoryTopicPage() {
   useEffect(() => {
     setData(null);
     setEditing(false);
+    setGen(false);
     setMessage("");
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -190,6 +194,7 @@ export default function TheoryTopicPage() {
               Duyệt {drafts} khối nháp
             </button>
           )}
+          <button onClick={() => setGen(!gen)}>Claude soạn…</button>
           <button className="primary" onClick={() => startEdit()}>
             {data.blocks.length ? "Soạn / sửa" : "Soạn lý thuyết"}
           </button>
@@ -308,6 +313,19 @@ export default function TheoryTopicPage() {
       {head}
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert ok">{message}</div>}
+      {gen && (
+        <TheoryGenPanel
+          topic={t}
+          blocks={data.blocks}
+          onClose={() => setGen(false)}
+          onSaved={(m) => {
+            setGen(false);
+            setMessage(m);
+            setGenRefresh((x) => x + 1);
+            load();
+          }}
+        />
+      )}
       {t.dang.length > 0 && data.blocks.length > 0 && (
         <nav className="theory-toc small">
           <span className="muted">Dạng bài:</span>
@@ -340,6 +358,7 @@ export default function TheoryTopicPage() {
         </div>
       )}
       <TheoryBlocks blocks={data.blocks} staff={staff} />
+      {staff && <TheoryGenList path={t.path} refresh={genRefresh} onDone={load} />}
       {staff && data.logs && data.logs.length > 0 && (
         <details className="log-box">
           <summary>Lịch sử thay đổi ({data.logs.length})</summary>

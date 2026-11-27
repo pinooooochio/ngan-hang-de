@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import aigen, params, theory, auth, backup, bank, builds, figures, generator, practice, render
+from . import aigen, params, theory, theorygen, auth, backup, bank, builds, figures, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url, upgrade_schema
 from .models import (
@@ -516,6 +516,17 @@ class TheoryImportIn(BaseModel):
 
 class TheoryPathIn(BaseModel):
     path: str
+
+
+class TheoryGenIn(BaseModel):
+    paths: list[str] = Field(min_length=1)
+    general: bool | None = None  # None: tự chọn phần còn thiếu của chủ đề
+    dang: list[str] | None = None  # chỉ khi một chủ đề; None: các dạng còn thiếu (hoặc tất cả nếu all_parts)
+    all_parts: bool = False  # soạn cả chủ đề, kể cả phần đã có
+    examples: int = Field(2, ge=0, le=4)
+    note: str = ""
+    mode: str = Field("api", pattern="^(api|manual)$")
+    output: str | None = None
 
 
 class DecisionIn(BaseModel):
@@ -1781,6 +1792,72 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             raise HTTPException(422, str(e))
         return batch_json(batch, full=True)
 
+    # ---------- Claude soạn lý thuyết ----------
+
+    def theory_gen_params(session: Session, body: TheoryGenIn) -> list[dict]:
+        out = []
+        for path in body.paths:
+            t = theory_topic(path)
+            miss = theorygen.missing_parts(session, t)
+            general = body.general if body.general is not None else (True if body.all_parts else miss["general"])
+            if body.dang is not None and len(body.paths) == 1:
+                dang = body.dang
+            else:
+                dang = t["dang"] if body.all_parts else miss["dang"]
+            if not general and not dang:
+                if len(body.paths) == 1:
+                    raise HTTPException(422, f"{t['ten']}: chưa chọn phần nào để soạn")
+                continue  # chủ đề đã đủ lý thuyết
+            out.append({"path": t["path"], "general": general, "dang": dang, "examples": body.examples,
+                        "note": body.note})
+        if not out:
+            raise HTTPException(422, "các chủ đề đã chọn đều đã có đủ lý thuyết")
+        return out
+
+    def theory_batch_json(b: GenerationBatch) -> dict:
+        t = theory.find_topic(b.params.get("path", ""))
+        return {**batch_json(b), "topic": t["ten"] if t else b.params.get("path"),
+                "added": sum(it.get("added", 0) for it in b.items or []),
+                "kinds": (b.items or [{}])[0].get("kinds", {}) if b.items else {}}
+
+    @app.post("/api/theory/gen/prompt", dependencies=[STAFF])
+    def theory_gen_prompt(body: TheoryGenIn, session: Session = S):
+        if len(body.paths) != 1:
+            raise HTTPException(422, "cách chép prompt chỉ làm từng chủ đề")
+        try:
+            p = theorygen.normalize(theory_gen_params(session, body)[0])
+        except aigen.GenError as e:
+            raise HTTPException(422, str(e))
+        system, user = theorygen.build_prompt(session, p)
+        return {"params": p, "system": system, "user": user, "combined": aigen.combined_prompt(system, user)}
+
+    @app.post("/api/theory/gen", status_code=201)
+    def theory_gen(body: TheoryGenIn, user: User = STAFF, session: Session = S):
+        rows = theory_gen_params(session, body)
+        if body.mode == "manual" and len(rows) != 1:
+            raise HTTPException(422, "cách chép prompt chỉ làm từng chủ đề")
+        if len(rows) > theorygen.MAX_TOPICS:
+            raise HTTPException(422, f"mỗi đợt tối đa {theorygen.MAX_TOPICS} chủ đề")
+        group = f"T{datetime.now():%y%m%d%H%M%S}" if len(rows) > 1 else None
+        try:
+            batches = [theorygen.create(session, r, body.mode, body.output, user_id=user.id, username=user.username,
+                                        group_id=group) for r in rows]
+        except aigen.GenError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        return [theory_batch_json(b) for b in batches]
+
+    @app.get("/api/theory/gen", dependencies=[STAFF])
+    def theory_gen_list(path: str | None = None, session: Session = S):
+        return {"api": aigen.api_available(), "model": aigen.model_name(),
+                "batches": [theory_batch_json(b) for b in theorygen.batches(session, path)]}
+
+    @app.get("/api/theory/gen/{batch_id}", dependencies=[STAFF])
+    def theory_gen_get(batch_id: int, session: Session = S):
+        b = load_batch(session, batch_id)
+        return {**theory_batch_json(b), "output": b.output, "system_prompt": b.system_prompt,
+                "user_prompt": b.user_prompt}
+
     @app.get("/api/gen/batches", dependencies=[STAFF])
     def gen_list(session: Session = S):
         """Mọi lần sinh (trang Sinh câu AI nhóm theo khung chương trình), kèm số câu còn chờ duyệt."""
@@ -1789,7 +1866,8 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
             .where(Question.status == Status.DRAFT, Question.source.startswith("AI #"))
             .group_by(Question.source)
         ).all())
-        rows = session.scalars(select(GenerationBatch).order_by(GenerationBatch.id.desc()))
+        rows = session.scalars(select(GenerationBatch).where(GenerationBatch.kind.is_(None))
+                               .order_by(GenerationBatch.id.desc()))
         return [batch_json(b, n_pending=pending.get(b.source, 0)) for b in rows]
 
     def load_batch(session: Session, batch_id: int) -> GenerationBatch:
