@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { TheoryBlock } from "../api";
+import { slugify, type TheoryBlock } from "../api";
 import QuestionView from "./QuestionView";
 import Tex from "./Tex";
 
@@ -69,7 +69,7 @@ export default function TheoryBlocks({ blocks, staff, onLine }: Props) {
       dang = b.dang;
       if (b.dang || i > 0)
         out.push(
-          <h3 key={`h${i}`} className="theory-dang" id={b.dang ? `dang-${b.dang}` : undefined}>
+          <h3 key={`h${i}`} className="theory-dang" id={b.dang ? `dang-${slugify(b.dang)}` : undefined}>
             {b.dang ? `Dạng: ${b.dang}` : "Kiến thức chung"}
           </h3>,
         );

@@ -2,8 +2,8 @@ import { StreamLanguage } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { api, type TheoryKind, type TheoryParsed, type TheoryTopic } from "../api";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { api, slugify, type TheoryKind, type TheoryParsed, type TheoryTopic } from "../api";
 import { useAuth } from "../auth";
 import TheoryBlocks from "../components/TheoryBlocks";
 import TheoryGenPanel, { TheoryGenList } from "../components/TheoryGenPanel";
@@ -48,6 +48,7 @@ export default function TheoryTopicPage() {
   const [gen, setGen] = useState(false);
   const [genRefresh, setGenRefresh] = useState(0);
   const view = useRef<EditorView | null>(null);
+  const { hash } = useLocation();
   const extensions = useMemo(() => [StreamLanguage.define(stex), EditorView.lineWrapping], []);
 
   const load = () =>
@@ -67,6 +68,13 @@ export default function TheoryTopicPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
+
+  // mở từ "Xem lý thuyết" (…#dang-goc-nhi-dien): cuộn tới dạng bài sau khi tải xong
+  useEffect(() => {
+    if (!data || !hash) return;
+    const el = document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (el) setTimeout(() => el.scrollIntoView({ block: "start" }), 300);
+  }, [data, hash]);
 
   // xem trước khi đang soạn (đợi gõ xong một chút)
   useEffect(() => {
@@ -194,6 +202,9 @@ export default function TheoryTopicPage() {
               Duyệt {drafts} khối nháp
             </button>
           )}
+          <Link className="button" to={`/chuyen-de/moi?chude=${t.path}`} title="Lý thuyết và bài tập của chủ đề này, xuất PDF">
+            Tạo chuyên đề
+          </Link>
           <button onClick={() => setGen(!gen)}>Claude soạn…</button>
           <button className="primary" onClick={() => startEdit()}>
             {data.blocks.length ? "Soạn / sửa" : "Soạn lý thuyết"}
@@ -331,7 +342,7 @@ export default function TheoryTopicPage() {
           <span className="muted">Dạng bài:</span>
           {t.dang.map((d) =>
             data.blocks.some((b) => b.dang === d) ? (
-              <a key={d} href={`#dang-${d}`}>
+              <a key={d} href={`#dang-${slugify(d)}`}>
                 {d}
               </a>
             ) : (

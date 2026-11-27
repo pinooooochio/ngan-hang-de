@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from . import aigen, params, theory, theorygen, auth, backup, bank, builds, figures, generator, practice, render
+from . import aigen, chuyende, params, theory, theorygen, auth, backup, bank, builds, figures, generator, practice, render
 from .compile import compile_tex, latex_available
 from .db import get_url, upgrade_schema
 from .models import (
@@ -46,6 +46,7 @@ from .models import (
     Setting,
     Status,
     TheoryLog,
+    TopicDoc,
     User,
 )
 from .parser import ParsedQuestion, parse_text
@@ -527,6 +528,16 @@ class TheoryGenIn(BaseModel):
     note: str = ""
     mode: str = Field("api", pattern="^(api|manual)$")
     output: str | None = None
+
+
+class TopicDocIn(BaseModel):
+    title: str = ""
+    date: str | None = None
+    parts: list[dict] = Field(default_factory=list)
+    levels: dict[str, int] | None = None
+    mixed: dict[str, int] | None = None
+    types: list[str] | None = None
+    seed: int | None = None
 
 
 class DecisionIn(BaseModel):
@@ -1505,7 +1516,11 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
     def get_attempt(attempt_id: int, user: User = U, session: Session = S):
         a = load_attempt(session, attempt_id, user)
         owner = session.get(User, a.user_id) if a.user_id else None
-        return {**attempt_json(a, full=True), "user_name": owner.display_name if owner else None}
+        data = {**attempt_json(a, full=True), "user_name": owner.display_name if owner else None}
+        if a.submitted_at is not None:  # xem lại bài: câu nào có lý thuyết thì có nút "Xem lý thuyết"
+            codes = [q["code"] for sec in a.data["sections"] for q in sec["questions"]]
+            data["theory_links"] = theory.question_links(session, codes)
+        return data
 
     @app.put("/api/attempts/{attempt_id}/answers", status_code=204)
     def save_answers(attempt_id: int, body: AnswersIn, user: User = U, session: Session = S):
@@ -1635,6 +1650,86 @@ def create_app(db_url: str | None = None, worker: bool = False) -> FastAPI:
                                   source=body.filename or "import", append=body.mode == "append", action="import")
             topics.append({"path": sec.topic["path"], "ten": sec.topic["ten"], **r})
         return {"topics": topics}
+
+    # ---------- Chuyên đề (lý thuyết + bài tập, xuất PDF) ----------
+
+    def doc_json(doc: TopicDoc, full: bool = False) -> dict:
+        data = doc.data or {}
+        out = {"id": doc.id, "title": doc.title, "username": doc.username,
+               "created_at": doc.created_at.isoformat(timespec="seconds"), "status": doc.status.value,
+               "error": doc.error, "error_question": doc.error_question, "count": data.get("count", 0),
+               "topics": [t["ten"] for t in data.get("topics", [])],
+               "finished_at": doc.finished_at.isoformat(timespec="seconds") if doc.finished_at else None}
+        if full:
+            out.update(config=doc.config, notes=data.get("notes", []), outline=[
+                {"ten": t["ten"], "path": t["path"], "general": len(t["general"]), "mixed": [q["code"] for q in t["mixed"]],
+                 "dang": [{"name": d["name"], "theory": len(d["theory"]),
+                           "exercises": [{"code": q["code"], "level": q["level"], "number": q["number"]}
+                                         for q in d["exercises"]]} for d in t["dang"]]}
+                for t in data.get("topics", [])])
+        return out
+
+    def load_doc(session: Session, doc_id: int) -> TopicDoc:
+        doc = session.get(TopicDoc, doc_id)
+        if doc is None:
+            raise HTTPException(404, f"không có chuyên đề #{doc_id}")
+        return doc
+
+    @app.post("/api/topic-docs/availability", dependencies=[STAFF])
+    def topic_doc_availability(body: TopicDocIn, session: Session = S):
+        try:
+            return chuyende.availability(session, body.model_dump())
+        except chuyende.DocError as e:
+            raise HTTPException(422, str(e))
+
+    @app.get("/api/topic-docs", dependencies=[STAFF])
+    def topic_doc_list(session: Session = S):
+        return [doc_json(d) for d in session.scalars(select(TopicDoc).order_by(TopicDoc.id.desc()))]
+
+    @app.post("/api/topic-docs", status_code=201)
+    def topic_doc_create(body: TopicDocIn, user: User = STAFF, session: Session = S):
+        try:
+            doc = chuyende.create(session, body.model_dump(), user.username)
+        except chuyende.DocError as e:
+            session.rollback()
+            raise HTTPException(422, str(e))
+        return doc_json(doc, full=True)
+
+    @app.get("/api/topic-docs/{doc_id}", dependencies=[STAFF])
+    def topic_doc_get(doc_id: int, session: Session = S):
+        return doc_json(load_doc(session, doc_id), full=True)
+
+    @app.post("/api/topic-docs/{doc_id}/refresh", dependencies=[STAFF])
+    def topic_doc_refresh(doc_id: int, reselect: bool = False, session: Session = S):
+        return doc_json(chuyende.refresh(session, load_doc(session, doc_id), reselect), full=True)
+
+    @app.delete("/api/topic-docs/{doc_id}", status_code=204, dependencies=[ADMIN])
+    def topic_doc_delete(doc_id: int, session: Session = S):
+        doc = load_doc(session, doc_id)
+        session.delete(doc)
+        session.commit()
+        shutil.rmtree(chuyende.doc_dir(doc_id), ignore_errors=True)
+
+    @app.get("/api/topic-docs/{doc_id}/chuyen-de.pdf", dependencies=[STAFF])
+    def topic_doc_pdf(doc_id: int, download: bool = False, session: Session = S):
+        doc = load_doc(session, doc_id)
+        if doc.status != BuildStatus.DONE or not doc.pdf_path or not Path(doc.pdf_path).exists():
+            raise HTTPException(404, "chưa có file PDF")
+        name = f"chuyen-de-{doc.id}.pdf"
+        return FileResponse(doc.pdf_path, media_type="application/pdf", filename=name if download else None,
+                            content_disposition_type="attachment" if download else "inline")
+
+    @app.get("/api/topic-docs/{doc_id}/chuyen-de.tex", dependencies=[STAFF])
+    def topic_doc_tex(doc_id: int, session: Session = S):
+        """File .tex kèm nhd.sty, nhd-hinh.sty (nén .zip) để sửa tiếp ngoài hệ thống."""
+        doc = load_doc(session, doc_id)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("chuyen-de.tex", doc.tex)
+            for name in render.STYLE_FILES:
+                z.write(render.TEMPLATE_DIR / name, name)
+        return Response(buf.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="chuyen-de-{doc.id}-tex.zip"'})
 
     # ---------- Sinh câu hỏi bằng AI ----------
 

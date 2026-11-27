@@ -246,6 +246,8 @@ export interface AttemptDetail extends AttemptSummary {
   answers: Record<string, Answer>;
   results: Record<string, AttemptResult> | null;
   server_time: string;
+  /** Đã nộp: câu -> chủ đề (và dạng bài) có lý thuyết đã duyệt. */
+  theory_links?: Record<string, { path: string; ten: string; dang: string | null }>;
 }
 
 export interface QuickSpec {
@@ -511,6 +513,22 @@ export interface AnswerRequestRow {
 /** Lỗi từ máy chủ, giữ mã HTTP để phân biệt chưa đăng nhập (401) hay không có quyền (403). */
 // ---------- Lý thuyết ----------
 
+/** Như slugify phía máy chủ: bỏ dấu, chữ thường, nối bằng "-" (dùng làm id neo tới dạng bài). */
+export function slugify(name: string): string {
+  const s = name
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+  return s || "khac";
+}
+
+export const theoryLink = (path: string, dang?: string | null) =>
+  `/ly-thuyet/cd/${path}${dang ? `#dang-${slugify(dang)}` : ""}`;
+
 export type TheoryKind = "dinhnghia" | "dinhly" | "congthuc" | "phuongphap" | "vidu" | "luuy" | "doan";
 
 export interface TheoryQuestion {
@@ -624,6 +642,53 @@ export interface TheoryGenIn {
   note?: string;
   mode: "api" | "manual";
   output?: string;
+}
+
+export type LevelCounts = Partial<Record<Level, number>>;
+
+export interface TopicDocConfig {
+  title: string;
+  date?: string | null;
+  parts: { path: string; general: boolean; dang: string[] }[];
+  levels: LevelCounts;
+  mixed: LevelCounts;
+  types: QType[];
+  seed?: number;
+}
+
+export interface TopicDocAvailability {
+  path: string;
+  ten: string;
+  names: string[];
+  dang_all: string[];
+  general_theory: number;
+  dang: { dang: string; theory: number; questions: Record<Level, number> }[];
+  topic_questions: Record<Level, number>;
+}
+
+export interface TopicDocSummary {
+  id: number;
+  title: string;
+  username: string | null;
+  created_at: string;
+  finished_at: string | null;
+  status: BuildState;
+  error: string | null;
+  error_question: string | null;
+  count: number;
+  topics: string[];
+}
+
+export interface TopicDocDetail extends TopicDocSummary {
+  config: TopicDocConfig;
+  notes: string[];
+  outline: {
+    ten: string;
+    path: string;
+    general: number;
+    mixed: string[];
+    dang: { name: string; theory: number; exercises: { code: string; level: Level | null; number: number }[] }[];
+  }[];
 }
 
 export class ApiError extends Error {
@@ -841,4 +906,11 @@ export const api = {
       `/api/theory/gen${path ? `?path=${encodeURIComponent(path)}` : ""}`,
     ),
   theoryGenRetry: (id: number) => request<unknown>("POST", `/api/gen/batches/${id}/retry`),
+  topicDocs: () => request<TopicDocSummary[]>("GET", "/api/topic-docs"),
+  topicDoc: (id: number) => request<TopicDocDetail>("GET", `/api/topic-docs/${id}`),
+  topicDocAvailability: (cfg: TopicDocConfig) => request<TopicDocAvailability[]>("POST", "/api/topic-docs/availability", cfg),
+  createTopicDoc: (cfg: TopicDocConfig) => request<TopicDocDetail>("POST", "/api/topic-docs", cfg),
+  refreshTopicDoc: (id: number, reselect: boolean) =>
+    request<TopicDocDetail>("POST", `/api/topic-docs/${id}/refresh?reselect=${reselect}`),
+  deleteTopicDoc: (id: number) => request<void>("DELETE", `/api/topic-docs/${id}`),
 };

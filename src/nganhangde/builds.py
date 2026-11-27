@@ -163,14 +163,21 @@ def start_worker(session_factory: sessionmaker, stop: threading.Event, poll: flo
     """Chạy worker trong một luồng nền của máy chủ web."""
 
     def loop() -> None:
+        from . import chuyende
+
         with session_factory() as s:
             reset_stale(s)
+            chuyende.reset_stale(s)
         while not stop.is_set():
             try:
                 with session_factory() as s:
                     build = claim_next(s)
                     if build is not None:
                         run_build(s, build)
+                        continue
+                    doc = chuyende.claim_next(s)  # chuyên đề dùng chung worker biên dịch
+                    if doc is not None:
+                        chuyende.run(s, doc)
                         continue
             except Exception:  # một lỗi bất ngờ không được làm dừng worker
                 log.exception("worker biên dịch lỗi")
