@@ -400,7 +400,9 @@ export default function OverviewPage() {
     api.overview().then(setData).catch((e: Error) => setError(e.message));
   }, []);
   const grade = useMemo(() => data?.grades.find((g) => g.slug === slug), [data, slug]);
-  useEffect(() => window.scrollTo(0, 0), [slug]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [slug]);
 
   if (error) return <div className="alert error">{error}</div>;
   if (!data) return <p className="muted">Đang tải…</p>;
