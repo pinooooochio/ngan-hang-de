@@ -74,4 +74,18 @@
 \newenvironment{loigiai}{\par\smallskip\noindent{\bfseries\itshape Lời giải.}\ }{\par}
 \newcommand{\dapanngan}[1]{\par\noindent{\bfseries\color{nhddung}Đáp án: #1}\par}
 
+% Lý thuyết: \begin{dinhnghia}[tiêu đề] ... \end{dinhnghia}; tương tự dinhly, congthuc, phuongphap, vidu, luuy.
+% \cauhoi{mã} (ví dụ lấy từ ngân hàng) được thay bằng nội dung câu khi xuất chuyên đề.
+\newcounter{vidu}
+\newcommand{\nhd@khoi}[3]{%
+  \par\medskip\noindent{\bfseries\color{#1}#2\if\relax\detokenize{#3}\relax\else\ (#3)\fi.}\ \ignorespaces}
+\newcommand{\nhd@het}{\par\medskip}
+\newenvironment{dinhnghia}[1][]{\nhd@khoi{blue!60!black}{Định nghĩa}{#1}}{\nhd@het}
+\newenvironment{dinhly}[1][]{\nhd@khoi{red!60!black}{Định lý}{#1}\itshape}{\nhd@het}
+\newenvironment{congthuc}[1][]{\nhd@khoi{green!40!black}{Công thức}{#1}}{\nhd@het}
+\newenvironment{phuongphap}[1][]{\nhd@khoi{orange!70!black}{Phương pháp giải}{#1}}{\nhd@het}
+\newenvironment{vidu}[1][]{\stepcounter{vidu}\nhd@khoi{blue!50!black}{Ví dụ \thevidu}{#1}}{\nhd@het}
+\newenvironment{luuy}[1][]{\nhd@khoi{violet!70!black}{Lưu ý}{#1}}{\nhd@het}
+\providecommand{\cauhoi}[1]{\par\noindent{\bfseries Ví dụ:} câu #1 trong ngân hàng.\par}
+
 \endinput

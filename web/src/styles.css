@@ -1637,3 +1637,94 @@ details.hint summary {
 .variant-plan .variant-stem .question {
   font-size: 14px;
 }
+
+/* Lý thuyết */
+.theory-grade {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.theory-grade > summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.theory-topics {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+.theory-topics td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--border);
+}
+.theory-topics td:last-child {
+  text-align: right;
+}
+.theory-topics .badge + .badge {
+  margin-left: 4px;
+}
+.theory-chapter td {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 13px;
+  padding-top: 10px;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.theory-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 12px;
+}
+.theory-blocks {
+  max-width: 900px;
+}
+.theory-dang {
+  font-size: 17px;
+  margin: 22px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.theory-block {
+  --k: #2a4d8f;
+  border-left: 4px solid var(--k);
+  background: var(--panel);
+  border-radius: 0 8px 8px 0;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+.theory-block.kind-doan {
+  border-left-color: transparent;
+  background: transparent;
+  padding-left: 0;
+}
+.theory-block.kind-dinhly { --k: #a12c2c; }
+.theory-block.kind-congthuc { --k: #2e7d32; }
+.theory-block.kind-phuongphap { --k: #c26a00; }
+.theory-block.kind-vidu { --k: #3b6fb6; }
+.theory-block.kind-luuy { --k: #7b3fa0; }
+.theory-block.is-draft {
+  outline: 1px dashed #c9a400;
+}
+.theory-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.theory-block-head > b {
+  color: var(--k);
+}
+.theory-title {
+  font-weight: 600;
+}
+.tex-loigiai {
+  margin-top: 6px;
+}
+.tex-h {
+  margin: 10px 0 4px;
+}

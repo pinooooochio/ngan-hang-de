@@ -1,4 +1,4 @@
-"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, đề, khung đề, mã đề, lượt luyện đề và tài khoản."""
+"""Mô hình dữ liệu: câu hỏi, lựa chọn, cây thẻ, lý thuyết, đề, khung đề, mã đề, lượt luyện đề và tài khoản."""
 
 from __future__ import annotations
 
@@ -380,6 +380,42 @@ class AnswerRequest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime)
     decided_by: Mapped[str | None] = mapped_column(String(64))
+
+
+class TheoryBlock(Base):
+    """Một khối lý thuyết (định nghĩa, định lý, công thức, phương pháp, ví dụ, lưu ý, đoạn văn) của một chủ đề
+    trong khung chương trình, có thể gắn với một dạng bài. Các khối của chủ đề xếp theo `position`."""
+
+    __tablename__ = "theory_blocks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)  # L-000001
+    topic_path: Mapped[str] = mapped_column(String(500), index=True)  # đường dẫn slug của chủ đề
+    dang: Mapped[str | None] = mapped_column(String(300))  # tên dạng bài trong khung, trống = kiến thức chung
+    kind: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(Text, default="")
+    ref_code: Mapped[str | None] = mapped_column(String(64))  # ví dụ lấy từ câu hỏi trong ngân hàng
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[Status] = mapped_column(Enum(Status), default=Status.DRAFT)
+    source: Mapped[str | None] = mapped_column(String(300))  # tay | tên file import | AI #n
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+    updated_by: Mapped[str | None] = mapped_column(String(64))
+
+
+class TheoryLog(Base):
+    """Nhật ký sửa lý thuyết theo chủ đề, kèm toàn bộ bài trước khi sửa để xem lại hoặc khôi phục."""
+
+    __tablename__ = "theory_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic_path: Mapped[str] = mapped_column(String(500), index=True)
+    username: Mapped[str | None] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(20))  # sua | duyet | import
+    detail: Mapped[str | None] = mapped_column(String(500))
+    before: Mapped[str | None] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
 
 
 class Setting(Base):
